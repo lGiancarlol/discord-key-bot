@@ -246,10 +246,10 @@ client.on('interactionCreate', async (interaction) => {
           .setColor(0x2ecc71)
           .setTitle('📊 Estado de Servicios y Plataformas')
           .addFields(
-            { name: 'Bypass Web (Licencias)', value: bypassInfo, inline: false },
+            { name: 'Bypass APK', value: bypassInfo, inline: false },
             { name: 'Bypass UID (Auto ON)', value: '🟢 Sistema Online (172.96.172.132:3000)', inline: false },
-            { name: 'WorldCheats (Usuarios)', value: '🟢 Sistema Online (App 146)', inline: false },
-            { name: 'KeyAuth (keyauth.cc)', value: config.providers.keyauth.sellerKey ? '🟢 Configurado' : '⚠️ Pendiente Seller Key', inline: false },
+            { name: 'WorldCheats (Panel VIP)', value: '🟢 Sistema Online (App 146)', inline: false },
+            { name: 'KeyAuth (Elite Pro)', value: '🟢 Sistema Online (App TryhardX-Secure)', inline: false },
             { name: 'Total Creadas por Bot', value: `${db.data.generatedKeys.length}`, inline: true }
           )
           .setFooter({ text: 'Desarrollado por Gian • Auth Cloud Gateway' });
