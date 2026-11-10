@@ -270,8 +270,8 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
     <!-- ── TAB 3: STOCK & INVENTARIO ── -->
     <div id="tab-stock" class="tab-content hidden space-y-8">
       <div>
-        <h2 class="text-xl font-bold text-white">Inventario de Claves Precargadas</h2>
-        <p class="text-xs text-slate-400 mt-0.5">Gestiona lotes de claves de KeyAuth u otras plataformas que se entregan automáticamente al revendedor.</p>
+        <h2 class="text-xl font-bold text-white">Inventario de Stock (KeyAuth Elite Pro)</h2>
+        <p class="text-xs text-slate-400 mt-0.5">Control de claves precargadas para KeyAuth. Las demás plataformas (Bypass APK, Bypass UID y WorldCheats) funcionan con generación automática directa vía API y no requieren stock manual.</p>
       </div>
 
       <!-- Grid de Stock por Plataforma -->
@@ -284,18 +284,16 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
         <h3 class="text-base font-bold text-white mb-2 flex items-center gap-2">
           <i class="fa-solid fa-boxes-stacked text-amber-400"></i> Cargar Lote de Claves al Stock
         </h3>
-        <p class="text-xs text-slate-400 mb-5">Pega una lista de claves (una por línea o separadas por coma). El sistema filtrará duplicados automáticamente.</p>
+        <p class="text-xs text-slate-400 mb-5">Pega una lista de claves para KeyAuth (una por línea o separadas por coma). El sistema filtrará duplicados automáticamente.</p>
 
         <form id="formAddStock" onsubmit="submitAddStock(event)" class="space-y-4">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label class="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Plataforma</label>
               <select id="stock_provider" required class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
-                <option value="keyauth">KeyAuth (Elite Pro)</option>
-                <option value="bypass">Bypass APK</option>
-                <option value="bypass_uid">Bypass UID (Auto ON)</option>
-                <option value="mycheats">WorldCheats</option>
+                <option value="keyauth" selected>KeyAuth (Elite Pro) — Stock Manual</option>
               </select>
+              <span class="text-[11px] text-slate-500 mt-1 block">Bypass y WorldCheats generan claves vía API (no requieren stock).</span>
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Duración por Clave (Días)</label>
@@ -857,29 +855,60 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
       try {
         const res = await fetch(\`/api/guilds/\${currentGuildId}/stock\`);
         const stockData = await res.json();
+        const keyauthCount = stockData.keyauth || 0;
+        const isCritical = keyauthCount === 0;
 
-        const providerNames = {
-          keyauth: 'KeyAuth (Elite Pro)',
-          bypass: 'Bypass APK',
-          bypass_uid: 'Bypass UID (Auto ON)',
-          mycheats: 'WorldCheats'
-        };
-
-        grid.innerHTML = Object.entries(providerNames).map(([pid, name]) => {
-          const count = stockData[pid] || 0;
-          const isCritical = count === 0;
-          return \`
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow">
-              <span class="text-xs text-slate-400 font-medium block uppercase tracking-wider">\${name}</span>
-              <div class="flex items-center justify-between mt-2">
-                <span class="text-2xl font-bold \${isCritical ? 'text-red-400' : 'text-slate-100'}">\${count}</span>
-                <span class="px-2 py-0.5 text-xs font-semibold rounded-lg \${isCritical ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}">
-                  \${isCritical ? 'Agotado' : 'Disponible'}
-                </span>
-              </div>
+        grid.innerHTML = \`
+          <div class="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 shadow-xl relative overflow-hidden">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-amber-400 font-bold block uppercase tracking-wider">KeyAuth (Elite Pro)</span>
+              <span class="px-2 py-0.5 text-[10px] font-semibold rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">Stock Manual</span>
             </div>
-          \`;
-        }).join('');
+            <div class="flex items-center justify-between mt-3">
+              <span class="text-2xl font-bold \${isCritical ? 'text-red-400' : 'text-white'}">\${keyauthCount} <span class="text-xs font-normal text-slate-400">claves</span></span>
+              <span class="px-2 py-0.5 text-xs font-semibold rounded-lg \${isCritical ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}">
+                \${isCritical ? 'Agotado' : 'Disponible'}
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-2">Requiere precarga de claves.</p>
+          </div>
+
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-slate-400 font-medium block uppercase tracking-wider">Bypass APK</span>
+              <span class="px-2 py-0.5 text-[10px] font-semibold rounded bg-brand-500/10 text-brand-400 border border-brand-500/20">API Directa</span>
+            </div>
+            <div class="flex items-center justify-between mt-3">
+              <span class="text-sm font-semibold text-emerald-400 flex items-center gap-1.5"><i class="fa-solid fa-bolt"></i> Automático</span>
+              <span class="px-2 py-0.5 text-xs font-semibold rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Online</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-2">No necesita precargar stock.</p>
+          </div>
+
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-slate-400 font-medium block uppercase tracking-wider">Bypass UID (Auto ON)</span>
+              <span class="px-2 py-0.5 text-[10px] font-semibold rounded bg-brand-500/10 text-brand-400 border border-brand-500/20">API Directa</span>
+            </div>
+            <div class="flex items-center justify-between mt-3">
+              <span class="text-sm font-semibold text-emerald-400 flex items-center gap-1.5"><i class="fa-solid fa-bolt"></i> Automático</span>
+              <span class="px-2 py-0.5 text-xs font-semibold rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Online</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-2">No necesita precargar stock.</p>
+          </div>
+
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-slate-400 font-medium block uppercase tracking-wider">WorldCheats (Panel VIP)</span>
+              <span class="px-2 py-0.5 text-[10px] font-semibold rounded bg-brand-500/10 text-brand-400 border border-brand-500/20">API Directa</span>
+            </div>
+            <div class="flex items-center justify-between mt-3">
+              <span class="text-sm font-semibold text-emerald-400 flex items-center gap-1.5"><i class="fa-solid fa-bolt"></i> Automático</span>
+              <span class="px-2 py-0.5 text-xs font-semibold rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Online</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-2">No necesita precargar stock.</p>
+          </div>
+        \`;
       } catch (err) {
         console.error('Error al cargar stock:', err);
       }

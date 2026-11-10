@@ -226,10 +226,10 @@ function getAdminAddStockModal() {
 
   const providerInput = new TextInputBuilder()
     .setCustomId('input_admin_stock_provider')
-    .setLabel('Plataforma (keyauth, bypass, etc.) *')
-    .setPlaceholder('keyauth (por defecto para Elite Pro)')
+    .setLabel('Plataforma (Únicamente KeyAuth)')
+    .setValue('keyauth')
     .setStyle(TextInputStyle.Short)
-    .setRequired(false);
+    .setRequired(true);
 
   const daysInput = new TextInputBuilder()
     .setCustomId('input_admin_stock_days')

@@ -724,12 +724,19 @@ client.on('interactionCreate', async (interaction) => {
 
         if (sub === 'add') {
           const providerId = interaction.options.getString('proveedor');
+          if (providerId !== 'keyauth') {
+            return interaction.reply({
+              content: '❌ **Solo KeyAuth (Elite Pro) requiere stock manual precargado.**\nLas demás plataformas (Bypass APK, Bypass UID y WorldCheats) generan sus licencias automáticamente vía API en tiempo real.',
+              ephemeral: true,
+            });
+          }
+
           const rawKeys = interaction.options.getString('claves');
           const duracion = interaction.options.getInteger('duracion') || 30;
           const keysList = rawKeys.split(/[\s,\n]+/).map((k) => k.trim()).filter((k) => k.length > 0);
 
           const result = db.addStock(providerId, keysList, duracion);
-          const pName = config.providers[providerId]?.name || providerId;
+          const pName = config.providers[providerId]?.name || 'KeyAuth (Elite Pro)';
 
           const embed = new EmbedBuilder()
             .setColor(0x2ecc71)
@@ -764,16 +771,18 @@ client.on('interactionCreate', async (interaction) => {
 
         if (sub === 'list') {
           const allStock = db.getAllStock();
-          const lines = Object.entries(allStock).map(([pid, count]) => {
-            const name = config.providers[pid]?.name || pid;
-            const icon = count > 5 ? '🟢' : count > 0 ? '🟡' : '🔴';
-            return `${icon} **${name}:** \`${count} claves en stock\``;
-          });
+          const keyCount = allStock.keyauth || 0;
+          const icon = keyCount > 5 ? '🟢' : keyCount > 0 ? '🟡' : '🔴';
 
           const embed = new EmbedBuilder()
             .setColor(0x00d2d3)
             .setTitle('📦 Inventario de Stock Precargado')
-            .setDescription(lines.join('\n') + '\n\n💡 *Recarga stock con `/stock add proveedor:<...> claves:<...>`*')
+            .setDescription(
+              `${icon} **KeyAuth (Elite Pro):** \`${keyCount} claves en stock\`\n\n` +
+              `⚡ **Bypass APK / UID:** \`Generación Automática (API Directa)\`\n` +
+              `⚡ **WorldCheats:** \`Generación Automática (API Directa)\`\n\n` +
+              `💡 *Solo KeyAuth requiere stock precargado. Las demás plataformas generan licencias en tiempo real sin requerir stock manual.*`
+            )
             .setTimestamp();
 
           return interaction.reply({ embeds: [embed], ephemeral: true });
@@ -950,16 +959,18 @@ client.on('interactionCreate', async (interaction) => {
         if (customId === 'admin_btn_view_stock') {
           await interaction.deferReply({ ephemeral: true });
           const allStock = db.getAllStock();
-          const lines = Object.entries(allStock).map(([pid, count]) => {
-            const name = config.providers[pid]?.name || pid;
-            const icon = count > 5 ? '🟢' : count > 0 ? '🟡' : '🔴';
-            return `${icon} **${name}:** \`${count} claves en stock\``;
-          });
+          const keyCount = allStock.keyauth || 0;
+          const icon = keyCount > 5 ? '🟢' : keyCount > 0 ? '🟡' : '🔴';
 
           const embed = new EmbedBuilder()
             .setColor(0x00d2d3)
             .setTitle('📦 Inventario de Stock Precargado')
-            .setDescription(lines.join('\n') + '\n\n💡 *Puedes cargar más claves pulsando el botón verde **Cargar Stock**.*')
+            .setDescription(
+              `${icon} **KeyAuth (Elite Pro):** \`${keyCount} claves en stock\`\n\n` +
+              `⚡ **Bypass APK / UID:** \`Generación Automática (API Directa)\`\n` +
+              `⚡ **WorldCheats:** \`Generación Automática (API Directa)\`\n\n` +
+              `💡 *Solo KeyAuth requiere stock precargado. Las demás plataformas generan licencias en tiempo real sin requerir stock manual.*`
+            )
             .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
             .setTimestamp();
 
@@ -1708,6 +1719,12 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         const providerId = (interaction.fields.getTextInputValue('input_admin_stock_provider') || 'keyauth').trim().toLowerCase();
+        if (providerId !== 'keyauth') {
+          return interaction.reply({
+            content: '❌ **Solo KeyAuth (Elite Pro) requiere stock manual precargado.**\nLas demás plataformas (Bypass APK, Bypass UID y WorldCheats) generan sus licencias automáticamente vía API en tiempo real.',
+            ephemeral: true,
+          });
+        }
         const dias = parseInt(interaction.fields.getTextInputValue('input_admin_stock_days') || '30', 10);
         const rawKeys = interaction.fields.getTextInputValue('input_admin_stock_keys');
         const keysList = rawKeys.split(/[\s,\n]+/).map((k) => k.trim()).filter((k) => k.length > 0);

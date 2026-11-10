@@ -304,6 +304,10 @@ function createWebServer(client) {
       return res.status(400).json({ error: 'Faltan parámetros requeridos.' });
     }
 
+    if (providerId !== 'keyauth') {
+      return res.status(400).json({ error: 'Solo KeyAuth (Elite Pro) requiere carga manual de stock. Las demás plataformas generan claves automáticamente vía API en tiempo real.' });
+    }
+
     const keysList = String(rawKeys)
       .split(/[\s,\n]+/)
       .map((k) => k.trim())

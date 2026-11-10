@@ -109,13 +109,10 @@ const commands = [
         .addStringOption((opt) =>
           opt
             .setName('proveedor')
-            .setDescription('Plataforma del stock')
+            .setDescription('Plataforma que requiere stock manual')
             .setRequired(true)
             .addChoices(
-              { name: 'KeyAuth (Elite Pro)', value: 'keyauth' },
-              { name: 'Bypass APK', value: 'bypass' },
-              { name: 'Bypass UID (Auto ON)', value: 'bypass_uid' },
-              { name: 'WorldCheats (Panel VIP)', value: 'mycheats' }
+              { name: 'KeyAuth (Elite Pro)', value: 'keyauth' }
             )
         )
         .addStringOption((opt) =>
