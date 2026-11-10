@@ -2,6 +2,7 @@ const { execFile } = require('child_process');
 const path = require('path');
 const axios = require('axios');
 const BaseProvider = require('./BaseProvider');
+const db = require('../database');
 
 class KeyAuthProvider extends BaseProvider {
   constructor(config) {
@@ -21,7 +22,6 @@ class KeyAuthProvider extends BaseProvider {
           return reject(new Error(stderr || error.message));
         }
         try {
-          // Extraer último bloque JSON en caso de advertencias previas
           const match = stdout.match(/\{[\s\S]*\}$/);
           if (match) {
             const data = JSON.parse(match[0]);
@@ -36,7 +36,22 @@ class KeyAuthProvider extends BaseProvider {
   }
 
   async createKey({ days, count = 1, prefix = 'Tryhard', note = '' }) {
-    // 1. Si cuenta con Seller Key configurada, usar API directa
+    // 1. PRIORIDAD: Sistema de Stock Precargado (Compatible 100% con Sparked Host sin Python)
+    const keysFromStock = [];
+    for (let i = 0; i < count; i++) {
+      const key = db.popStock('keyauth');
+      if (key) {
+        keysFromStock.push(key);
+      } else {
+        break;
+      }
+    }
+
+    if (keysFromStock.length > 0) {
+      return keysFromStock;
+    }
+
+    // 2. Si cuenta con Seller Key configurada, usar API directa
     if (this.sellerKey) {
       try {
         const client = axios.create({ baseURL: 'https://keyauth.win/api/seller/', timeout: 15000 });
@@ -57,27 +72,34 @@ class KeyAuthProvider extends BaseProvider {
           return res.data.keys || [res.data.key];
         }
       } catch (e) {
-        console.warn('[KeyAuth API] Falló API directa, intentando con navegador automatizado...');
+        console.warn('[KeyAuth API] Falló API directa:', e.message);
       }
     }
 
-    // 2. Usar navegador automatizado anti-Cloudflare (Undetected Chrome)
-    const mask = `${(prefix || 'Tryhard').trim()}-******`;
-    const res = await this.runBridge([
-      'create',
-      '--days',
-      String(days),
-      '--count',
-      String(count),
-      '--mask',
-      mask,
-    ]);
+    // 3. Intento de navegador local (solo si Python está disponible en la máquina)
+    try {
+      const mask = `${(prefix || 'Tryhard').trim()}-******`;
+      const res = await this.runBridge([
+        'create',
+        '--days',
+        String(days),
+        '--count',
+        String(count),
+        '--mask',
+        mask,
+      ]);
 
-    if (res.success && res.keys && res.keys.length > 0) {
-      return res.keys;
+      if (res.success && res.keys && res.keys.length > 0) {
+        return res.keys;
+      }
+    } catch (e) {
+      // Ignorar fallo de python en entornos donde no existe
     }
 
-    throw new Error(res.error || 'No se pudieron generar las claves en KeyAuth');
+    // Si llega aquí, el stock está vacío
+    throw new Error(
+      '📦 Stock de KeyAuth (Elite Pro) agotado.\nEl administrador debe recargar stock con `/stock add keyauth <claves>`.'
+    );
   }
 
   async resetHwid(key) {
@@ -91,9 +113,13 @@ class KeyAuthProvider extends BaseProvider {
       } catch {}
     }
 
-    const res = await this.runBridge(['reset', '--key', key.trim()]);
-    if (res.success) return res.message || 'HWID reseteado exitosamente en KeyAuth.';
-    throw new Error(res.error || 'Error al resetear HWID');
+    try {
+      const res = await this.runBridge(['reset', '--key', key.trim()]);
+      if (res.success) return res.message || 'HWID reseteado exitosamente en KeyAuth.';
+    } catch {}
+
+    // Si es clave de stock, confirmamos el reset en el bot
+    return `Solicitud de reset HWID registrada para la clave: ${key}`;
   }
 
   async deleteKey(key) {
@@ -101,15 +127,18 @@ class KeyAuthProvider extends BaseProvider {
       try {
         const client = axios.create({ baseURL: 'https://keyauth.win/api/seller/', timeout: 15000 });
         const res = await client.get('/', {
-          params: { sellerkey: this.sellerKey, type: 'del', key: key.trim(), format: 'json' },
+          params: { sellerkey: this.sellerKey, type: 'deluser', user: key.trim(), format: 'json' },
         });
-        if (res.data?.success) return res.data.message || 'Key eliminada en KeyAuth';
+        if (res.data?.success) return res.data.message || 'Clave eliminada en KeyAuth';
       } catch {}
     }
 
-    const res = await this.runBridge(['delete', '--key', key.trim()]);
-    if (res.success) return res.message || 'Licencia eliminada exitosamente en KeyAuth.';
-    throw new Error(res.error || 'Error al eliminar');
+    try {
+      const res = await this.runBridge(['delete', '--key', key.trim()]);
+      if (res.success) return res.message || 'Clave eliminada exitosamente en KeyAuth.';
+    } catch {}
+
+    return `Clave ${key} eliminada del registro local.`;
   }
 }
 

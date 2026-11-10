@@ -7,6 +7,15 @@ const DB_FILE = path.join(DB_DIR, 'db.json');
 const defaultData = {
   // userId/roleId -> { providers: ['bypass', 'mycheats'], maxDays: 30 }
   permissions: {},
+  // Revendedores: userId -> { expiresAt: ISO, allowedProviders: [], maxDays: 30, createdAt: ISO, addedBy: string }
+  resellers: {},
+  // Stock de claves precargadas: providerId -> ['KEY-1', 'KEY-2', ...]
+  keyStock: {
+    keyauth: [],
+    bypass: [],
+    bypass_uid: [],
+    mycheats: [],
+  },
   // array of { id, userId, providerId, key, days, prefix, note, createdAt }
   generatedKeys: [],
 };
@@ -24,7 +33,13 @@ class Database {
     if (fs.existsSync(DB_FILE)) {
       try {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
-        this.data = { ...defaultData, ...JSON.parse(raw) };
+        const parsed = JSON.parse(raw);
+        this.data = {
+          ...defaultData,
+          ...parsed,
+          keyStock: { ...defaultData.keyStock, ...(parsed.keyStock || {}) },
+          resellers: parsed.resellers || {},
+        };
       } catch (err) {
         console.error('Error reading db.json, using defaults:', err);
         this.data = defaultData;
@@ -42,67 +57,168 @@ class Database {
     }
   }
 
-  // Permisos
-  getUserPermissions(member, config) {
-    // Si el usuario es administrador del servidor o tiene el rol de admin configurado:
-    const hasAdminRole = member.roles.cache.has(config.discord.adminRoleId);
-    const isServerAdmin = member.permissions.has('Administrator');
+  // ── GESTIÓN DE REVENDEDORES POR TIEMPO ──
 
+  getReseller(userId) {
+    const r = this.data.resellers[userId];
+    if (!r) return null;
+
+    const expiresTime = new Date(r.expiresAt).getTime();
+    const now = Date.now();
+    const isExpired = now >= expiresTime;
+    const diffMs = Math.max(0, expiresTime - now);
+    const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+    return {
+      userId,
+      expiresAt: r.expiresAt,
+      isExpired,
+      daysLeft,
+      allowedProviders: r.allowedProviders || [],
+      maxDays: r.maxDays || 30,
+      createdAt: r.createdAt,
+      addedBy: r.addedBy || 'Admin',
+    };
+  }
+
+  setReseller(userId, days, allowedProviders = [], addedBy = 'Admin') {
+    const current = this.getReseller(userId);
+    let newExpiresTime;
+
+    // Si ya está activo, le sumamos los días; si ya expiró o es nuevo, desde ahora
+    if (current && !current.isExpired) {
+      newExpiresTime = new Date(current.expiresAt).getTime() + (Number(days) * 24 * 60 * 60 * 1000);
+    } else {
+      newExpiresTime = Date.now() + (Number(days) * 24 * 60 * 60 * 1000);
+    }
+
+    this.data.resellers[userId] = {
+      expiresAt: new Date(newExpiresTime).toISOString(),
+      allowedProviders: Array.isArray(allowedProviders) && allowedProviders.length > 0 
+        ? allowedProviders 
+        : ['bypass', 'bypass_uid', 'mycheats', 'keyauth'],
+      maxDays: 30,
+      createdAt: current ? current.createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      addedBy,
+    };
+
+    this.save();
+    return this.getReseller(userId);
+  }
+
+  removeReseller(userId) {
+    if (this.data.resellers[userId]) {
+      delete this.data.resellers[userId];
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  getAllResellers() {
+    return Object.keys(this.data.resellers).map((id) => this.getReseller(id));
+  }
+
+  // Permisos efectivos de un miembro
+  getUserPermissions(member, config) {
+    const hasAdminRole = member.roles?.cache?.has(config.discord.adminRoleId);
+    const isServerAdmin = member.permissions?.has('Administrator');
+
+    // 1. Administrador (acceso total permanente)
     if (hasAdminRole || isServerAdmin) {
       return {
         isAdmin: true,
+        isReseller: true,
+        isExpired: false,
+        daysLeft: 9999,
         allowedProviders: Object.keys(config.providers),
-        maxDays: 30,
+        maxDays: 90,
       };
     }
 
-    // Buscar permisos por usuario directo
-    if (this.data.permissions[member.id]) {
+    // 2. Revendedor registrado por tiempo
+    const reseller = this.getReseller(member.id);
+    if (reseller) {
       return {
         isAdmin: false,
-        allowedProviders: this.data.permissions[member.id].providers || [],
-        maxDays: this.data.permissions[member.id].maxDays || 30,
+        isReseller: true,
+        isExpired: reseller.isExpired,
+        daysLeft: reseller.daysLeft,
+        expiresAt: reseller.expiresAt,
+        allowedProviders: reseller.isExpired ? [] : reseller.allowedProviders,
+        maxDays: reseller.maxDays,
       };
     }
 
-    // Buscar permisos por roles del usuario
-    for (const roleId of member.roles.cache.keys()) {
-      if (this.data.permissions[roleId]) {
-        return {
-          isAdmin: false,
-          allowedProviders: this.data.permissions[roleId].providers || [],
-          maxDays: this.data.permissions[roleId].maxDays || 30,
-        };
+    // 3. Permisos heredados por rol
+    if (member.roles?.cache) {
+      for (const roleId of member.roles.cache.keys()) {
+        if (this.data.permissions[roleId]) {
+          return {
+            isAdmin: false,
+            isReseller: true,
+            isExpired: false,
+            daysLeft: 30,
+            allowedProviders: this.data.permissions[roleId].providers || [],
+            maxDays: this.data.permissions[roleId].maxDays || 30,
+          };
+        }
       }
     }
 
-    // Sin permisos asignados
+    // 4. Sin acceso
     return {
       isAdmin: false,
+      isReseller: false,
+      isExpired: true,
+      daysLeft: 0,
       allowedProviders: [],
       maxDays: 0,
     };
   }
 
-  setPermission(targetId, providers, maxDays = 30) {
-    this.data.permissions[targetId] = {
-      providers: Array.isArray(providers) ? providers : [providers],
-      maxDays: Number(maxDays) || 30,
-      updatedAt: new Date().toISOString(),
+  // ── GESTIÓN DE STOCK DE CLAVES ──
+
+  addStock(providerId, keysArray) {
+    if (!this.data.keyStock[providerId]) {
+      this.data.keyStock[providerId] = [];
+    }
+    const cleanKeys = keysArray
+      .map((k) => k.trim())
+      .filter((k) => k.length > 0 && !this.data.keyStock[providerId].includes(k));
+
+    this.data.keyStock[providerId].push(...cleanKeys);
+    this.save();
+    return {
+      added: cleanKeys.length,
+      total: this.data.keyStock[providerId].length,
     };
+  }
+
+  popStock(providerId) {
+    if (!this.data.keyStock[providerId] || this.data.keyStock[providerId].length === 0) {
+      return null;
+    }
+    const key = this.data.keyStock[providerId].shift();
     this.save();
+    return key;
   }
 
-  removePermission(targetId) {
-    delete this.data.permissions[targetId];
-    this.save();
+  getStock(providerId) {
+    return this.data.keyStock[providerId] || [];
   }
 
-  getAllPermissions() {
-    return this.data.permissions;
+  getAllStock() {
+    const res = {};
+    for (const [p, keys] of Object.entries(this.data.keyStock)) {
+      res[p] = (keys || []).length;
+    }
+    return res;
   }
 
-  // Historial de llaves generadas
+  // ── HISTORIAL DE CLAVES ──
+
   recordKey({ userId, providerId, key, days, prefix = '', note = '' }) {
     const item = {
       id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -124,6 +240,13 @@ class Database {
       .filter((k) => k.userId === userId)
       .slice(-limit)
       .reverse();
+  }
+
+  findKey(key) {
+    const clean = key.trim().toLowerCase();
+    return this.data.generatedKeys.find(
+      (k) => (k.key && k.key.trim().toLowerCase() === clean) || (k.note && k.note.toLowerCase().includes(clean))
+    );
   }
 }
 
