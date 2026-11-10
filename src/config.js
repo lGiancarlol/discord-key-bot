@@ -12,7 +12,7 @@ module.exports = {
     voiceChannelId: process.env.VOICE_CHANNEL_ID || '1569408755085348927',
   },
   web: {
-    port: parseInt(process.env.PORT || process.env.WEB_PORT || '3000', 10),
+    port: parseInt(process.env.PORT || process.env.SERVER_PORT || process.env.WEB_PORT || '8117', 10),
     sessionSecret: process.env.SESSION_SECRET || 'gian-auth-gateway-super-secret-key-2026',
     clientId: process.env.CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET || '',
