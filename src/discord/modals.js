@@ -12,6 +12,15 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30) {
       .setCustomId('modal_create_keyauth')
       .setTitle('🔑 Reclamar KeyAuth (Elite Pro)');
 
+    const daysInput = new TextInputBuilder()
+      .setCustomId('input_days')
+      .setLabel(`Duración de la Key en Días *`)
+      .setPlaceholder(`Ej: 1, 7, 15, 30 (según stock cargado)`)
+      .setStyle(TextInputStyle.Short)
+      .setMinLength(1)
+      .setMaxLength(3)
+      .setRequired(true);
+
     const countInput = new TextInputBuilder()
       .setCustomId('input_count')
       .setLabel('Cantidad de Keys (1 a 5)')
@@ -30,6 +39,7 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30) {
       .setRequired(false);
 
     modal.addComponents(
+      new ActionRowBuilder().addComponents(daysInput),
       new ActionRowBuilder().addComponents(countInput),
       new ActionRowBuilder().addComponents(noteInput)
     );

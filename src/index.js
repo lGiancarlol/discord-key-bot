@@ -770,18 +770,25 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (sub === 'list') {
-          const allStock = db.getAllStock();
+          const gId = interaction.guildId || config.discord.guildId;
+          const allStock = db.getAllStock(gId);
           const keyCount = allStock.keyauth || 0;
           const icon = keyCount > 5 ? '🟢' : keyCount > 0 ? '🟡' : '🔴';
+
+          const breakdown = db.getStockBreakdown('keyauth', gId);
+          const breakdownLines = Object.entries(breakdown)
+            .filter(([_, c]) => c > 0)
+            .map(([d, c]) => `  ▫️ **${d} días:** \`${c} claves disponibles\``);
+          const breakdownText = breakdownLines.length > 0 ? `\n${breakdownLines.join('\n')}` : '\n  *(Sin claves cargadas)*';
 
           const embed = new EmbedBuilder()
             .setColor(0x00d2d3)
             .setTitle('📦 Inventario de Stock Precargado')
             .setDescription(
-              `${icon} **KeyAuth (Elite Pro):** \`${keyCount} claves en stock\`\n\n` +
+              `${icon} **KeyAuth (Elite Pro):** \`${keyCount} claves en total\`${breakdownText}\n\n` +
               `⚡ **Bypass APK / UID:** \`Generación Automática (API Directa)\`\n` +
               `⚡ **WorldCheats:** \`Generación Automática (API Directa)\`\n\n` +
-              `💡 *Solo KeyAuth requiere stock precargado. Las demás plataformas generan licencias en tiempo real sin requerir stock manual.*`
+              `💡 *Puedes solicitar claves de 1 día, 7 días, 15 días o 30 días según el stock disponible.*`
             )
             .setTimestamp();
 
@@ -958,18 +965,25 @@ client.on('interactionCreate', async (interaction) => {
 
         if (customId === 'admin_btn_view_stock') {
           await interaction.deferReply({ ephemeral: true });
-          const allStock = db.getAllStock();
+          const gId = interaction.guildId || config.discord.guildId;
+          const allStock = db.getAllStock(gId);
           const keyCount = allStock.keyauth || 0;
           const icon = keyCount > 5 ? '🟢' : keyCount > 0 ? '🟡' : '🔴';
+
+          const breakdown = db.getStockBreakdown('keyauth', gId);
+          const breakdownLines = Object.entries(breakdown)
+            .filter(([_, c]) => c > 0)
+            .map(([d, c]) => `  ▫️ **${d} días:** \`${c} claves disponibles\``);
+          const breakdownText = breakdownLines.length > 0 ? `\n${breakdownLines.join('\n')}` : '\n  *(Sin claves cargadas)*';
 
           const embed = new EmbedBuilder()
             .setColor(0x00d2d3)
             .setTitle('📦 Inventario de Stock Precargado')
             .setDescription(
-              `${icon} **KeyAuth (Elite Pro):** \`${keyCount} claves en stock\`\n\n` +
+              `${icon} **KeyAuth (Elite Pro):** \`${keyCount} claves en total\`${breakdownText}\n\n` +
               `⚡ **Bypass APK / UID:** \`Generación Automática (API Directa)\`\n` +
               `⚡ **WorldCheats:** \`Generación Automática (API Directa)\`\n\n` +
-              `💡 *Solo KeyAuth requiere stock precargado. Las demás plataformas generan licencias en tiempo real sin requerir stock manual.*`
+              `💡 *Para KeyAuth puedes reclamar claves de 1 día, 7 días, 15 días o 30 días según el stock disponible.*`
             )
             .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
             .setTimestamp();
@@ -1798,35 +1812,36 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
-        let days = 30;
+        let days = parseInt(interaction.fields.getTextInputValue('input_days') || '30', 10);
         let count = 1;
         let prefix = '';
         let note = '';
 
-        if (providerId === 'keyauth') {
-          try {
-            count = parseInt(interaction.fields.getTextInputValue('input_count') || '1', 10);
-          } catch {
-            count = 1;
-          }
-          try {
-            note = (interaction.fields.getTextInputValue('input_note') || '').trim();
-          } catch {
-            note = '';
-          }
-          days = 30;
-        } else {
-          days = parseInt(interaction.fields.getTextInputValue('input_days'), 10);
+        try {
           count = parseInt(interaction.fields.getTextInputValue('input_count') || '1', 10);
-          prefix = (interaction.fields.getTextInputValue('input_prefix') || '').trim();
-          note = (interaction.fields.getTextInputValue('input_note') || '').trim();
+        } catch {
+          count = 1;
+        }
 
-          if (isNaN(days) || days <= 0 || days > perms.maxDays) {
-            return interaction.reply({
-              content: `❌ Duración inválida. Debe ser un número entre 1 y ${perms.maxDays} días.`,
-              ephemeral: true,
-            });
+        try {
+          note = (interaction.fields.getTextInputValue('input_note') || '').trim();
+        } catch {
+          note = '';
+        }
+
+        if (providerId !== 'keyauth') {
+          try {
+            prefix = (interaction.fields.getTextInputValue('input_prefix') || '').trim();
+          } catch {
+            prefix = '';
           }
+        }
+
+        if (isNaN(days) || days <= 0 || (!perms.isAdmin && days > perms.maxDays)) {
+          return interaction.reply({
+            content: `❌ Duración inválida. Debe ser un número entre 1 y ${perms.maxDays} días.`,
+            ephemeral: true,
+          });
         }
 
         if (isNaN(count) || count < 1 || count > 5) {

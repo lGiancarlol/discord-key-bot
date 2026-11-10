@@ -75,6 +75,11 @@ class ProviderManager {
     else if (id === 'keyauth') instance = new KeyAuthProvider(mergedConfig);
     else instance = this.get(id);
 
+    if (instance) {
+      instance.guildId = guildId;
+      instance.db = db;
+    }
+
     this.guildProviders.set(cacheKey, instance);
     return instance;
   }

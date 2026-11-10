@@ -380,17 +380,58 @@ class Database {
     };
   }
 
-  popStock(providerId, guildId) {
-    const gData = this.getGuildData(guildId);
+  popStock(providerId, targetDays = null, guildId = null) {
+    let actualDays = targetDays;
+    let actualGuildId = guildId;
+
+    if (typeof targetDays === 'string' && targetDays.length > 10 && !guildId) {
+      actualGuildId = targetDays;
+      actualDays = null;
+    }
+
+    const gData = this.getGuildData(actualGuildId);
     if (!gData.keyStock[providerId] || gData.keyStock[providerId].length === 0) {
       return null;
     }
-    const raw = gData.keyStock[providerId].shift();
-    this.saveGuild(guildId);
-    if (typeof raw === 'object' && raw.key) {
-      return raw;
+
+    let index = -1;
+    if (actualDays !== null && actualDays !== undefined) {
+      const numDays = Number(actualDays);
+      if (!isNaN(numDays) && numDays > 0) {
+        index = gData.keyStock[providerId].findIndex((item) => {
+          const itemDays = typeof item === 'object' && item && item.days ? Number(item.days) : 30;
+          return itemDays === numDays;
+        });
+
+        // Si se especificó una duración y no hay stock con esa duración, retornar null
+        if (index === -1) {
+          return null;
+        }
+      }
     }
-    return { key: raw, days: 30 };
+
+    if (index === -1) {
+      index = 0;
+    }
+
+    const [item] = gData.keyStock[providerId].splice(index, 1);
+    this.saveGuild(actualGuildId);
+
+    if (typeof item === 'object' && item !== null && item.key) {
+      return { key: item.key, days: Number(item.days) || 30 };
+    }
+    return { key: item, days: actualDays ? Number(actualDays) : 30 };
+  }
+
+  getStockBreakdown(providerId, guildId = null) {
+    const gData = this.getGuildData(guildId);
+    const list = gData.keyStock[providerId] || [];
+    const breakdown = {};
+    for (const item of list) {
+      const days = typeof item === 'object' && item && item.days ? Number(item.days) : 30;
+      breakdown[days] = (breakdown[days] || 0) + 1;
+    }
+    return breakdown;
   }
 
   getStock(providerId, guildId) {
@@ -504,8 +545,9 @@ class Database {
       getAllResellers: () => this.getAllResellers(gId),
       getUserPermissions: (member, cfg) => this.getUserPermissions(member, cfg, gId),
       addStock: (providerId, keysArray, days) => this.addStock(providerId, keysArray, days, gId),
-      popStock: (providerId) => this.popStock(providerId, gId),
+      popStock: (providerId, targetDays) => this.popStock(providerId, targetDays, gId),
       getStock: (providerId) => this.getStock(providerId, gId),
+      getStockBreakdown: (providerId) => this.getStockBreakdown(providerId, gId),
       getAllStock: () => this.getAllStock(gId),
       recordKey: (params) => this.recordKey(params, gId),
       getUserKeys: (userId, limit) => this.getUserKeys(userId, limit, gId),

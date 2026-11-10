@@ -858,6 +858,12 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
         const keyauthCount = stockData.keyauth || 0;
         const isCritical = keyauthCount === 0;
 
+        const breakdown = stockData.keyauthBreakdown || {};
+        const breakdownEntries = Object.entries(breakdown).filter(([_, c]) => c > 0);
+        const breakdownHtml = breakdownEntries.length > 0
+          ? breakdownEntries.map(([d, c]) => \`<span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300 font-mono text-[11px] font-semibold">\${d} das: \${c}</span>\`).join(' ')
+          : '<span class="text-[11px] text-slate-500">Sin claves cargadas</span>';
+
         grid.innerHTML = \`
           <div class="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 shadow-xl relative overflow-hidden">
             <div class="flex items-center justify-between">
@@ -870,7 +876,10 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
                 \${isCritical ? 'Agotado' : 'Disponible'}
               </span>
             </div>
-            <p class="text-[11px] text-slate-400 mt-2">Requiere precarga de claves.</p>
+            <div class="mt-3 pt-2.5 border-t border-slate-800/80">
+              <span class="text-[10px] text-slate-400 uppercase font-medium block mb-1.5">Duraciones en Stock:</span>
+              <div class="flex flex-wrap gap-1.5">\${breakdownHtml}</div>
+            </div>
           </div>
 
           <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow">
@@ -1035,7 +1044,6 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
     function handleGenProviderChange() {
       const pid = document.getElementById('gen_provider').value;
       const isKeyauth = pid === 'keyauth';
-      document.getElementById('gen_days_container').style.display = isKeyauth ? 'none' : '';
       document.getElementById('gen_prefix_container').style.display = isKeyauth ? 'none' : '';
     }
 

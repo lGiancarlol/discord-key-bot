@@ -294,7 +294,11 @@ function createWebServer(client) {
   // 5. Inventario de Stock
   app.get('/api/guilds/:guildId/stock', requireAuth, requireGuildAccess(client, db), (req, res) => {
     const stock = req.guildDb.getAllStock();
-    res.json(stock);
+    const keyauthBreakdown = req.guildDb.getStockBreakdown('keyauth');
+    res.json({
+      ...stock,
+      keyauthBreakdown,
+    });
   });
 
   // 6. Cargar Lote de Claves al Stock

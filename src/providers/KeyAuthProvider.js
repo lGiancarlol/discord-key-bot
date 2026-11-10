@@ -36,19 +36,36 @@ class KeyAuthProvider extends BaseProvider {
   }
 
   async createKey({ days, count = 1, prefix = 'Tryhard', note = '' }) {
-    // 1. PRIORIDAD: Sistema de Stock Precargado (Compatible 100% con Sparked Host sin Python)
-    const keysFromStock = [];
+    // 1. PRIORIDAD: Sistema de Stock Precargado por Duración (100% Sparked Host sin Python)
+    const targetDays = days ? Number(days) : null;
+    const stockItems = [];
+    const database = this.db || db;
+    const guildId = this.guildId || null;
+
     for (let i = 0; i < count; i++) {
-      const key = db.popStock('keyauth');
-      if (key) {
-        keysFromStock.push(key);
+      const item = database.popStock('keyauth', targetDays, guildId);
+      if (item) {
+        stockItems.push(item);
       } else {
         break;
       }
     }
 
-    if (keysFromStock.length > 0) {
-      return keysFromStock;
+    if (stockItems.length > 0) {
+      this.lastExtractedDays = stockItems[0]?.days || targetDays || 30;
+      return stockItems;
+    }
+
+    // Si se solicitó una duración específica y no hay stock de esa duración, avisar con el inventario disponible
+    const breakdown = database.getStockBreakdown('keyauth', guildId);
+    const availableDurations = Object.entries(breakdown).filter(([_, c]) => c > 0);
+
+    if (availableDurations.length > 0) {
+      const breakdownText = availableDurations.map(([d, c]) => `• ${d} días: ${c} claves disponibles`).join('\n');
+      throw new Error(
+        `📦 No hay stock disponible de ${targetDays || 30} días para KeyAuth (Elite Pro).\n\n` +
+        `Duraciones disponibles actualmente en inventario:\n${breakdownText}`
+      );
     }
 
     // 2. Si cuenta con Seller Key configurada, usar API directa
