@@ -21,6 +21,7 @@ const {
   getDeleteKeyModal,
   getResetHwidModal,
   getAdminAssignResellerModal,
+  getAdminEditPermsModal,
   getAdminRemoveResellerModal,
   getAdminInfoResellerModal,
   getAdminAddStockModal,
@@ -777,6 +778,10 @@ client.on('interactionCreate', async (interaction) => {
           return interaction.showModal(getAdminAssignResellerModal());
         }
 
+        if (customId === 'admin_btn_edit_perms') {
+          return interaction.showModal(getAdminEditPermsModal());
+        }
+
         if (customId === 'admin_btn_remove_reseller') {
           return interaction.showModal(getAdminRemoveResellerModal());
         }
@@ -1164,6 +1169,114 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
       }
+
+      // Selección de plataformas con checks al asignar
+      if (customId.startsWith('select_admin_assign_platforms_')) {
+        if (!perms.isAdmin) {
+          return interaction.reply({
+            content: '⛔ Solo administradores pueden realizar esta acción.',
+            ephemeral: true,
+          });
+        }
+
+        const parts = customId.split('_');
+        const targetId = parts[4];
+        const dias = parseInt(parts[5], 10);
+
+        let platforms = [];
+        if (values.includes('all')) {
+          platforms = Object.keys(config.providers);
+        } else {
+          platforms = values;
+        }
+
+        const res = db.setReseller(targetId, dias, platforms, user.tag);
+        const expDate = new Date(res.expiresAt).toLocaleDateString('es-ES', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        });
+
+        const platNames = res.allowedProviders.map((pid) => config.providers[pid]?.name || pid);
+
+        const embed = new EmbedBuilder()
+          .setColor(0x2ecc71)
+          .setTitle('✅ Revendedor Configurado Exitosamente')
+          .setDescription(
+            `• **Usuario:** <@${targetId}>\n` +
+              `• **Tiempo asignado:** +${dias} días\n` +
+              `• **Días totales restantes:** **${res.daysLeft} días** (Vence: \`${expDate}\`)\n` +
+              `• **Plataformas autorizadas:**\n${platNames.map((n) => `  ☑️ **${n}**`).join('\n')}`
+          )
+          .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
+          .setTimestamp();
+
+        await logToAdminChannel(
+          new EmbedBuilder()
+            .setColor(0x2ecc71)
+            .setTitle('👤 [PANEL ADMIN] Revendedor Asignado / Renovado')
+            .setDescription(`Admin <@${user.id}> asignó **${dias} días** a <@${targetId}> con plataformas: \`${res.allowedProviders.join(', ')}\`.`)
+            .setTimestamp()
+        );
+
+        return interaction.update({
+          content: '✅ **Membresía y plataformas configuradas con éxito.**',
+          embeds: [embed],
+          components: [],
+        });
+      }
+
+      // Selección de plataformas con checks al modificar
+      if (customId.startsWith('select_admin_edit_platforms_')) {
+        if (!perms.isAdmin) {
+          return interaction.reply({
+            content: '⛔ Solo administradores pueden realizar esta acción.',
+            ephemeral: true,
+          });
+        }
+
+        const parts = customId.split('_');
+        const targetId = parts[4];
+
+        let platforms = [];
+        if (values.includes('all')) {
+          platforms = Object.keys(config.providers);
+        } else {
+          platforms = values;
+        }
+
+        if (db.data.resellers[targetId]) {
+          db.data.resellers[targetId].allowedProviders = platforms;
+          db.data.resellers[targetId].updatedAt = new Date().toISOString();
+          db.save();
+        }
+
+        const platNames = platforms.map((pid) => config.providers[pid]?.name || pid);
+
+        const embed = new EmbedBuilder()
+          .setColor(0x3498db)
+          .setTitle('🔐 Permisos Actualizados Exitosamente')
+          .setDescription(
+            `Se han actualizado las plataformas permitidas para <@${targetId}>:\n\n` +
+              `${platNames.map((n) => `☑️ **${n}**`).join('\n')}`
+          )
+          .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
+          .setTimestamp();
+
+        await logToAdminChannel(
+          new EmbedBuilder()
+            .setColor(0x3498db)
+            .setTitle('🔐 [PANEL ADMIN] Permisos Modificados')
+            .setDescription(`Admin <@${user.id}> actualizó las plataformas para <@${targetId}>: \`${platforms.join(', ')}\`.`)
+            .setTimestamp()
+        );
+
+        return interaction.update({
+          content: '✅ **Permisos de plataformas actualizados.**',
+          embeds: [embed],
+          components: [],
+        });
+      }
     }
 
     // 4. SUBMIT DE MODALS (Formularios)
@@ -1198,49 +1311,91 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
-        const platInput = (interaction.fields.getTextInputValue('input_admin_reseller_platforms') || 'all').trim();
-        let platforms = [];
-        if (platInput.toLowerCase() === 'all') {
-          platforms = Object.keys(config.providers);
-        } else {
-          platforms = platInput
-            .split(',')
-            .map((p) => p.trim().toLowerCase())
-            .filter((p) => config.providers[p]);
-        }
+        const platformOptions = [
+          {
+            label: '🌟 TODAS LAS PLATAFORMAS (Acceso Total)',
+            value: 'all',
+            description: 'Otorga acceso a todas las plataformas',
+          },
+          ...Object.entries(config.providers).map(([pid, p]) => ({
+            label: p.name,
+            value: pid,
+            description: `Habilitar acceso a ${p.name}`,
+          })),
+        ];
 
-        if (platforms.length === 0) {
-          platforms = Object.keys(config.providers);
-        }
-
-        const res = db.setReseller(targetId, dias, platforms, user.tag);
-        const expDate = new Date(res.expiresAt).toLocaleDateString('es-ES', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric',
-        });
-
-        const embed = new EmbedBuilder()
-          .setColor(0x2ecc71)
-          .setTitle('✅ Revendedor Configurado Exitosamente')
-          .setDescription(
-            `• **Usuario:** <@${targetId}>\n` +
-              `• **Tiempo asignado:** +${dias} días\n` +
-              `• **Días totales restantes:** **${res.daysLeft} días** (Vence: \`${expDate}\`)\n` +
-              `• **Plataformas autorizadas:** \`${res.allowedProviders.join(', ')}\``
-          )
-          .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
-          .setTimestamp();
-
-        await logToAdminChannel(
-          new EmbedBuilder()
-            .setColor(0x2ecc71)
-            .setTitle('👤 [PANEL ADMIN] Revendedor Asignado / Renovado')
-            .setDescription(`Admin <@${user.id}> asignó **${dias} días** a <@${targetId}> desde el Panel Administrativo.\nVence: \`${expDate}\``)
-            .setTimestamp()
+        const selectRow = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`select_admin_assign_platforms_${targetId}_${dias}`)
+            .setPlaceholder('Marca las casillas de las plataformas permitidas...')
+            .setMinValues(1)
+            .setMaxValues(platformOptions.length)
+            .addOptions(platformOptions)
         );
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({
+          content: `👤 **Configurando membresía para <@${targetId}> (+${dias} días)**\n` +
+            `👉 Selecciona una o varias plataformas marcando los checks a continuación:`,
+          components: [selectRow],
+          ephemeral: true,
+        });
+      }
+
+      if (customId === 'modal_admin_edit_perms') {
+        if (!perms.isAdmin) {
+          return interaction.reply({
+            content: '⛔ Solo administradores pueden realizar esta acción.',
+            ephemeral: true,
+          });
+        }
+
+        const rawUser = interaction.fields.getTextInputValue('input_admin_target_user');
+        const targetId = extractUserId(rawUser);
+
+        if (!targetId) {
+          return interaction.reply({
+            content: '❌ No se pudo identificar al usuario. Ingresa su ID o mención.',
+            ephemeral: true,
+          });
+        }
+
+        const current = db.getReseller(targetId);
+        if (!current) {
+          return interaction.reply({
+            content: `⚠️ El usuario <@${targetId}> no está registrado como revendedor. Primero asígnale tiempo con **Asignar Revendedor**.`,
+            ephemeral: true,
+          });
+        }
+
+        const platformOptions = [
+          {
+            label: '🌟 TODAS LAS PLATAFORMAS (Acceso Total)',
+            value: 'all',
+            description: 'Otorga acceso a todas las plataformas',
+          },
+          ...Object.entries(config.providers).map(([pid, p]) => ({
+            label: p.name,
+            value: pid,
+            description: `Habilitar acceso a ${p.name}`,
+          })),
+        ];
+
+        const selectRow = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`select_admin_edit_platforms_${targetId}`)
+            .setPlaceholder('Marca o desmarca las plataformas deseadas...')
+            .setMinValues(1)
+            .setMaxValues(platformOptions.length)
+            .addOptions(platformOptions)
+        );
+
+        return interaction.reply({
+          content: `🔐 **Modificando plataformas para <@${targetId}>**\n` +
+            `Plataformas actuales: \`${current.allowedProviders.join(', ') || 'Ninguna'}\`\n` +
+            `👉 Marca las casillas de las plataformas que tendrá permitidas a partir de ahora:`,
+          components: [selectRow],
+          ephemeral: true,
+        });
       }
 
       if (customId === 'modal_admin_remove_reseller') {

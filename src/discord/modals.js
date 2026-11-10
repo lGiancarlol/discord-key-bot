@@ -163,19 +163,27 @@ function getAdminAssignResellerModal() {
     .setMaxLength(4)
     .setRequired(true);
 
-  const platformsInput = new TextInputBuilder()
-    .setCustomId('input_admin_reseller_platforms')
-    .setLabel('Plataformas Permitidas')
-    .setPlaceholder('all (o: bypass, bypass_uid, mycheats, keyauth)')
-    .setStyle(TextInputStyle.Short)
-    .setRequired(false);
-
   modal.addComponents(
     new ActionRowBuilder().addComponents(userInput),
-    new ActionRowBuilder().addComponents(daysInput),
-    new ActionRowBuilder().addComponents(platformsInput)
+    new ActionRowBuilder().addComponents(daysInput)
   );
 
+  return modal;
+}
+
+function getAdminEditPermsModal() {
+  const modal = new ModalBuilder()
+    .setCustomId('modal_admin_edit_perms')
+    .setTitle('🔐 Modificar Permisos de Revendedor');
+
+  const userInput = new TextInputBuilder()
+    .setCustomId('input_admin_target_user')
+    .setLabel('ID o @Mención del Revendedor *')
+    .setPlaceholder('Ej: 123456789012345678 o @usuario')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(userInput));
   return modal;
 }
 
@@ -251,6 +259,7 @@ module.exports = {
   getDeleteKeyModal,
   getResetHwidModal,
   getAdminAssignResellerModal,
+  getAdminEditPermsModal,
   getAdminRemoveResellerModal,
   getAdminInfoResellerModal,
   getAdminAddStockModal,
