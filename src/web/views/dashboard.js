@@ -105,6 +105,9 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
       <button onclick="switchTab('generator')" id="tab-btn-generator" class="tab-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2 transition whitespace-nowrap text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
         <i class="fa-solid fa-bolt"></i> Emisión Rápida
       </button>
+      <button onclick="switchTab('admins')" id="tab-btn-admins" class="tab-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2 transition whitespace-nowrap text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
+        <i class="fa-solid fa-user-shield"></i> Administradores
+      </button>
       <button onclick="switchTab('settings')" id="tab-btn-settings" class="tab-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2 transition whitespace-nowrap text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
         <i class="fa-solid fa-gears"></i> Configuración
       </button>
@@ -534,6 +537,51 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
       </div>
     </div>
 
+    <!-- ── TAB 7: ADMINISTRADORES DEL BOT ── -->
+    <div id="tab-admins" class="tab-content hidden space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-user-shield text-amber-400"></i> Administradores del Bot
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">Autoriza qué usuarios de Discord tienen permiso para entrar a este Dashboard Web y usar comandos administrativos.</p>
+        </div>
+      </div>
+
+      <!-- Formulario para Agregar Admin -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-xl">
+        <h3 class="text-sm font-bold text-white mb-2">Nombrar Nuevo Administrador</h3>
+        <p class="text-xs text-slate-400 mb-4">Ingresa el ID de Discord del usuario (ej: 446349128650326021) o menciónalo.</p>
+        <form onsubmit="submitAddAdmin(event)" class="flex flex-col sm:flex-row gap-3">
+          <input type="text" id="admin_user_input" required placeholder="ID de Discord (números)" class="flex-1 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+          <button type="submit" class="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-medium text-sm rounded-xl transition shadow-lg shadow-amber-600/20 whitespace-nowrap flex items-center justify-center gap-2">
+            <i class="fa-solid fa-shield-halved text-xs"></i>
+            <span>Autorizar Admin</span>
+          </button>
+        </form>
+      </div>
+
+      <!-- Tabla de Administradores -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl max-w-3xl">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-950/70 border-b border-slate-800 text-slate-400 text-xs uppercase tracking-wider">
+              <tr>
+                <th class="py-3.5 px-4">Usuario</th>
+                <th class="py-3.5 px-4">Rango</th>
+                <th class="py-3.5 px-4 text-right">Acción</th>
+              </tr>
+            </thead>
+            <tbody id="admins-table-body" class="divide-y divide-slate-800/60 font-mono text-xs">
+              <tr>
+                <td colspan="3" class="py-8 text-center text-slate-500 font-sans">Cargando administradores...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <!-- ── MODAL: ASIGNAR / EDITAR REVENDEDOR ── -->
@@ -627,6 +675,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
       if (tabId === 'stock') loadStock();
       if (tabId === 'keys') loadKeys();
       if (tabId === 'settings') loadSettings();
+      if (tabId === 'admins') loadAdmins();
     }
 
     // Toast Notificación
@@ -1069,6 +1118,98 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         showToast('Panel publicado exitosamente en Discord.');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function loadAdmins() {
+      const tbody = document.getElementById('admins-table-body');
+      tbody.innerHTML = '<tr><td colspan="3" class="py-8 text-center text-slate-500 font-sans"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Cargando administradores...</td></tr>';
+      try {
+        const res = await fetch(\`/api/guilds/\${currentGuildId}/admins\`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        if (!data.admins || data.admins.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="3" class="py-8 text-center text-slate-500 font-sans">No hay administradores registrados aún.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.admins.map(adm => {
+          const avatarUrl = adm.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png';
+          return \`
+            <tr class="hover:bg-slate-800/30 transition">
+              <td class="py-3 px-4">
+                <div class="flex items-center gap-3">
+                  <img src="\${avatarUrl}" class="w-8 h-8 rounded-full border border-slate-700 bg-slate-800 object-cover" />
+                  <div>
+                    <div class="font-sans font-bold text-white flex items-center gap-2">
+                      \${adm.tag}
+                      \${adm.isOwner ? '<span class="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 font-mono border border-amber-500/30">OWNER</span>' : ''}
+                    </div>
+                    <div class="text-[11px] text-slate-400 font-mono">\${adm.userId}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="py-3 px-4">
+                <span class="px-2 py-1 rounded-md text-xs font-sans font-medium \${adm.isOwner ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-brand-500/10 text-brand-400 border border-brand-500/20'}">
+                  \${adm.role}
+                </span>
+              </td>
+              <td class="py-3 px-4 text-right">
+                \${adm.canRemove ? \`
+                  <button onclick="removeAdmin('\${adm.userId}')" class="px-2.5 py-1.5 bg-red-950/40 hover:bg-red-900/60 text-red-300 border border-red-800/50 rounded-lg text-xs font-sans font-medium transition flex items-center gap-1.5 ml-auto">
+                    <i class="fa-solid fa-user-xmark"></i>
+                    <span>Revocar</span>
+                  </button>
+                \` : \`
+                  <span class="text-xs text-slate-500 font-sans italic">Inmutable</span>
+                \`}
+              </td>
+            </tr>
+          \`;
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = \`<tr><td colspan="3" class="py-8 text-center text-red-400 font-sans">Error al cargar: \${err.message}</td></tr>\`;
+      }
+    }
+
+    async function submitAddAdmin(e) {
+      e.preventDefault();
+      const input = document.getElementById('admin_user_input');
+      const userId = input.value.trim();
+      if (!userId) return;
+
+      try {
+        const res = await fetch(\`/api/guilds/\${currentGuildId}/admins\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        input.value = '';
+        showToast('Administrador autorizado exitosamente.');
+        loadAdmins();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function removeAdmin(userId) {
+      if (!confirm(\`¿Estás seguro de revocar los permisos de administrador al usuario \${userId}?\`)) return;
+
+      try {
+        const res = await fetch(\`/api/guilds/\${currentGuildId}/admins/\${userId}\`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        showToast('Permisos de administrador revocados.');
+        loadAdmins();
       } catch (err) {
         showToast(err.message, 'error');
       }

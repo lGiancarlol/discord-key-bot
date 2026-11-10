@@ -5,6 +5,7 @@ module.exports = {
     token: process.env.DISCORD_TOKEN,
     clientId: process.env.CLIENT_ID,
     guildId: process.env.GUILD_ID,
+    ownerId: process.env.OWNER_ID || '446349128650326021',
     panelChannelId: process.env.PANEL_CHANNEL_ID,
     adminPanelChannelId: process.env.ADMIN_PANEL_CHANNEL_ID || '1569766838533886032',
     logsChannelId: process.env.LOGS_CHANNEL_ID,
@@ -16,8 +17,8 @@ module.exports = {
     sessionSecret: process.env.SESSION_SECRET || 'gian-auth-gateway-super-secret-key-2026',
     clientId: process.env.CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET || '',
-    dashboardUrl: process.env.DASHBOARD_URL || 'http://localhost:3000',
-    adminPassword: process.env.DASHBOARD_ADMIN_PASSWORD || 'admin2026',
+    dashboardUrl: process.env.DASHBOARD_URL || 'http://216.173.77.191:8117',
+    redirectUri: `${(process.env.DASHBOARD_URL || 'http://216.173.77.191:8117').replace(/\/$/, '')}/auth/callback`,
   },
   providers: {
     bypass: {

@@ -30,7 +30,7 @@ function getDiscordAuthUrl(redirectUri) {
   return `https://discord.com/api/oauth2/authorize?${params.toString()}`;
 }
 
-async function exchangeDiscordCode(code, redirectUri) {
+async function exchangeDiscordCode(code, redirectUri, client, db) {
   const params = new URLSearchParams({
     client_id: config.web.clientId,
     client_secret: config.web.clientSecret,
@@ -61,14 +61,48 @@ async function exchangeDiscordCode(code, redirectUri) {
   const user = userRes.data;
   const rawGuilds = guildsRes.data || [];
 
-  // Filtrar servidores donde el usuario es Dueño o tiene permisos de Administrador (0x8) o Gestionar Servidor (0x20)
-  const adminGuilds = rawGuilds.filter((g) => {
-    if (g.owner) return true;
-    const perms = BigInt(g.permissions || 0);
-    const ADMINISTRATOR = BigInt(0x8);
-    const MANAGE_GUILD = BigInt(0x20);
-    return (perms & ADMINISTRATOR) === ADMINISTRATOR || (perms & MANAGE_GUILD) === MANAGE_GUILD;
-  });
+  // Verificar si es el Dueño Principal
+  const isMasterOwner = user.id === config.discord.ownerId;
+
+  // Filtrar servidores donde tiene acceso
+  const authorizedGuilds = [];
+  const botGuilds = client?.guilds?.cache || new Map();
+
+  for (const [guildId, guild] of botGuilds.entries()) {
+    const isServerOwner = guild.ownerId === user.id;
+    const isBotAdmin = db?.forGuild(guildId)?.isBotAdmin(user.id);
+    const userDiscordGuild = rawGuilds.find((g) => g.id === guildId);
+    let isDiscordAdmin = false;
+    if (userDiscordGuild) {
+      if (userDiscordGuild.owner) isDiscordAdmin = true;
+      const perms = BigInt(userDiscordGuild.permissions || 0);
+      const ADMINISTRATOR = BigInt(0x8);
+      const MANAGE_GUILD = BigInt(0x20);
+      if ((perms & ADMINISTRATOR) === ADMINISTRATOR || (perms & MANAGE_GUILD) === MANAGE_GUILD) {
+        isDiscordAdmin = true;
+      }
+    }
+
+    if (isMasterOwner || isServerOwner || isBotAdmin || isDiscordAdmin) {
+      authorizedGuilds.push({
+        id: guild.id,
+        name: guild.name,
+        icon: guild.icon,
+        iconUrl: guild.iconURL ? guild.iconURL() : null,
+        owner: isServerOwner || isMasterOwner,
+        isMaster: isMasterOwner,
+      });
+    }
+  }
+
+  // Si no es el dueño ni tiene permiso en ningún servidor
+  if (!isMasterOwner && authorizedGuilds.length === 0) {
+    return {
+      authorized: false,
+      user,
+      error: `Tu cuenta de Discord (@${user.username} • ID: ${user.id}) no tiene permisos de administrador. Debes pedirle al Dueño (<@${config.discord.ownerId}>) que te autorice para poder acceder al panel.`,
+    };
+  }
 
   const sessionToken = generateSessionToken();
   const sessionData = {
@@ -78,46 +112,20 @@ async function exchangeDiscordCode(code, redirectUri) {
       id: user.id,
       username: user.username,
       discriminator: user.discriminator,
-      global_name: user.global_name,
+      global_name: user.global_name || user.username,
       avatar: user.avatar,
       avatarUrl: user.avatar
         ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`
         : 'https://cdn.discordapp.com/embed/avatars/0.png',
+      isMasterOwner,
     },
-    adminGuilds: adminGuilds.map((g) => ({
-      id: g.id,
-      name: g.name,
-      icon: g.icon,
-      owner: g.owner,
-      iconUrl: g.icon
-        ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png`
-        : null,
-    })),
+    authorizedGuilds,
     createdAt: Date.now(),
     expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 días
   };
 
   activeSessions.set(sessionToken, sessionData);
-  return { sessionToken, sessionData };
-}
-
-function createMasterSession() {
-  const sessionToken = generateSessionToken();
-  const sessionData = {
-    token: sessionToken,
-    type: 'master',
-    user: {
-      id: 'master_admin',
-      username: 'Administrador Principal',
-      global_name: 'Master Admin',
-      avatarUrl: 'https://cdn.discordapp.com/embed/avatars/1.png',
-    },
-    adminGuilds: [], // Acceso a todos los servidores del bot
-    createdAt: Date.now(),
-    expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
-  };
-  activeSessions.set(sessionToken, sessionData);
-  return { sessionToken, sessionData };
+  return { authorized: true, sessionToken, sessionData };
 }
 
 function getSession(token) {
@@ -141,7 +149,7 @@ function requireAuth(req, res, next) {
   const session = getSession(token);
   if (!session) {
     if (req.path.startsWith('/api/')) {
-      return res.status(401).json({ error: 'No autorizado. Inicia sesión.' });
+      return res.status(401).json({ error: 'No autorizado. Inicia sesión con Discord.' });
     }
     return res.redirect('/login');
   }
@@ -162,24 +170,25 @@ function requireGuildAccess(client, db) {
     }
 
     const session = req.session;
+    const userId = session.user.id;
 
-    // Si es Master Admin tiene acceso universal
-    if (session.type === 'master') {
+    // Dueño maestro tiene acceso total
+    if (session.user.isMasterOwner || userId === config.discord.ownerId) {
       req.guildDb = db.forGuild(guildId);
       req.guild = client?.guilds.cache.get(guildId) || null;
       return next();
     }
 
     // Verificar si el usuario es admin en este servidor de Discord
-    const isDiscordAdmin = session.adminGuilds?.some((g) => g.id === guildId);
-    const isBotAdmin = db.forGuild(guildId).isBotAdmin(session.user.id);
-    const isOwner = client?.guilds.cache.get(guildId)?.ownerId === session.user.id;
+    const isBotAdmin = db.forGuild(guildId).isBotAdmin(userId);
+    const isOwner = client?.guilds.cache.get(guildId)?.ownerId === userId;
+    const isListed = session.authorizedGuilds?.some((g) => g.id === guildId);
 
-    if (!isDiscordAdmin && !isBotAdmin && !isOwner) {
+    if (!isBotAdmin && !isOwner && !isListed) {
       if (req.path.startsWith('/api/')) {
         return res.status(403).json({ error: 'No tienes permisos de administrador en este servidor.' });
       }
-      return res.status(403).send('<h1>403 Prohibido</h1><p>No tienes permisos de administración en este servidor.</p><a href="/servers">Volver</a>');
+      return res.status(403).send('<h1>403 Prohibido</h1><p>No tienes permisos de administración en este servidor. Contacta al dueño.</p><a href="/servers">Volver</a>');
     }
 
     req.guildDb = db.forGuild(guildId);
@@ -191,7 +200,6 @@ function requireGuildAccess(client, db) {
 module.exports = {
   getDiscordAuthUrl,
   exchangeDiscordCode,
-  createMasterSession,
   getSession,
   destroySession,
   requireAuth,

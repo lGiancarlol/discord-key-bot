@@ -73,28 +73,14 @@ function createWebServer(client) {
   });
 
   app.get('/login', (req, res) => {
-    res.send(renderLoginPage());
-  });
-
-  // Login directo con contraseña maestra
-  app.post('/login/admin', (req, res) => {
-    const { password } = req.body;
-    if (password && password === config.web.adminPassword) {
-      const { sessionToken } = createMasterSession();
-      res.cookie('session_token', sessionToken, {
-        httpOnly: true,
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-        sameSite: 'lax',
-      });
-      return res.redirect('/servers');
-    }
-    res.send(renderLoginPage('Contraseña maestra incorrecta. Inténtalo de nuevo.'));
+    const errorMessage = req.query.error ? decodeURIComponent(req.query.error) : '';
+    res.send(renderLoginPage(errorMessage));
   });
 
   // Iniciar flujo Discord OAuth2
   app.get('/auth/discord', (req, res) => {
     if (!config.web.clientSecret) {
-      return res.send(renderLoginPage('Falta configurar DISCORD_CLIENT_SECRET en .env para inicio con Discord. Puedes ingresar con la Contraseña Maestra abajo.'));
+      return res.send(renderLoginPage('Falta configurar DISCORD_CLIENT_SECRET en tu archivo .env. Consulta el panel de Discord Developer Portal para obtenerlo.'));
     }
     const redirectUrl = getDiscordAuthUrl();
     res.redirect(redirectUrl);
@@ -108,8 +94,13 @@ function createWebServer(client) {
     }
 
     try {
-      const { sessionToken } = await exchangeDiscordCode(code);
-      res.cookie('session_token', sessionToken, {
+      const result = await exchangeDiscordCode(code, null, client, db);
+
+      if (!result.authorized) {
+        return res.redirect(`/login?error=${encodeURIComponent(result.error)}`);
+      }
+
+      res.cookie('session_token', result.sessionToken, {
         httpOnly: true,
         maxAge: 7 * 24 * 60 * 60 * 1000,
         sameSite: 'lax',
@@ -117,7 +108,8 @@ function createWebServer(client) {
       res.redirect('/servers');
     } catch (err) {
       console.error('[OAuth2] Error en callback de Discord:', err.response?.data || err.message);
-      res.send(renderLoginPage('Error al autenticar con Discord: ' + (err.response?.data?.error_description || err.message)));
+      const msg = err.response?.data?.error_description || err.message;
+      res.redirect(`/login?error=${encodeURIComponent('Error al conectar con Discord: ' + msg)}`);
     }
   });
 
@@ -136,8 +128,8 @@ function createWebServer(client) {
 
     let serversList = [];
 
-    if (session.type === 'master') {
-      // El administrador maestro ve todos los servidores donde está el bot
+    if (session.user.isMasterOwner) {
+      // El dueño maestro ve todos los servidores donde está el bot
       serversList = botGuilds.map((g) => {
         const gDb = db.forGuild(g.id);
         const data = gDb.getData();
@@ -151,7 +143,6 @@ function createWebServer(client) {
         };
       });
 
-      // Incluir también cualquier servidor guardado en base de datos aunque el bot esté reconectando
       const knownGuilds = db.getGuildList();
       for (const kg of knownGuilds) {
         if (!serversList.some((s) => s.id === kg.id)) {
@@ -166,17 +157,16 @@ function createWebServer(client) {
         }
       }
     } else {
-      // Usuario autenticado por Discord: lista los servidores donde es admin
-      const userAdminGuilds = session.adminGuilds || [];
-      serversList = userAdminGuilds.map((ag) => {
-        const botInGuild = botGuilds.has(ag.id);
+      // Usuario administrador de Discord: lista sus servidores autorizados
+      serversList = (session.authorizedGuilds || []).map((ag) => {
+        const g = botGuilds.get(ag.id);
         const gDb = db.forGuild(ag.id);
         const data = gDb.getData();
         return {
           id: ag.id,
           name: ag.name,
           iconUrl: ag.iconUrl,
-          botPresent: botInGuild,
+          botPresent: Boolean(g),
           resellersCount: Object.keys(data.resellers || {}).length,
           keysCount: (data.generatedKeys || []).length,
         };
@@ -545,6 +535,112 @@ function createWebServer(client) {
     }
   });
 
+  // 15. Lista de Administradores
+  app.get('/api/guilds/:guildId/admins', requireAuth, requireGuildAccess(client, db), async (req, res) => {
+    const adminIds = req.guildDb.getBotAdmins();
+    const botOwnerId = config.discord.ownerId || '446349128650326021';
+
+    const adminList = [];
+
+    // Incluir al dueño maestro primero
+    if (botOwnerId) {
+      let ownerTag = 'Dueño Principal';
+      let ownerAvatar = null;
+      try {
+        const u = await client.users.fetch(botOwnerId);
+        ownerTag = u.tag || u.username;
+        ownerAvatar = u.displayAvatarURL({ size: 64, forceStatic: true });
+      } catch (_) {}
+      adminList.push({
+        userId: botOwnerId,
+        tag: ownerTag,
+        avatar: ownerAvatar,
+        role: 'Dueño Maestro (Owner)',
+        isOwner: true,
+        canRemove: false
+      });
+    }
+
+    for (const uid of adminIds) {
+      if (uid === botOwnerId) continue;
+      let tag = uid;
+      let avatar = null;
+      try {
+        const u = await client.users.fetch(uid);
+        tag = u.tag || u.username;
+        avatar = u.displayAvatarURL({ size: 64, forceStatic: true });
+      } catch (_) {}
+      adminList.push({
+        userId: uid,
+        tag,
+        avatar,
+        role: 'Administrador del Bot',
+        isOwner: false,
+        canRemove: true
+      });
+    }
+
+    res.json({ admins: adminList });
+  });
+
+  // 16. Nombrar Administrador
+  app.post('/api/guilds/:guildId/admins', requireAuth, requireGuildAccess(client, db), async (req, res) => {
+    const { userId } = req.body;
+    const { guildId } = req.params;
+    const cleanUser = String(userId || '').replace(/[^0-9]/g, '');
+
+    if (!cleanUser) {
+      return res.status(400).json({ error: 'Ingresa un ID de usuario válido o mención.' });
+    }
+
+    const added = req.guildDb.addBotAdmin(cleanUser);
+
+    if (added) {
+      await logToGuildAdminChannel(
+        client,
+        guildId,
+        new EmbedBuilder()
+          .setColor(0x16a34a)
+          .setTitle('[ADMINISTRACIÓN] Asignación de Administrador')
+          .addFields(
+            { name: 'Operador', value: `${req.user.username} (Panel Web)`, inline: true },
+            { name: 'Rango Operador', value: 'Dueño / Administrador', inline: true },
+            { name: 'Usuario Designado', value: `<@${cleanUser}>`, inline: true },
+            { name: 'Origen', value: 'Dashboard Web', inline: false }
+          )
+          .setFooter({ text: 'Sistema de Auditoría • Auth Gateway Web' })
+          .setTimestamp()
+      );
+    }
+
+    res.json({ success: true, added });
+  });
+
+  // 17. Revocar Administrador
+  app.delete('/api/guilds/:guildId/admins/:userId', requireAuth, requireGuildAccess(client, db), async (req, res) => {
+    const { userId, guildId } = req.params;
+    const removed = req.guildDb.removeBotAdmin(userId);
+
+    if (removed) {
+      await logToGuildAdminChannel(
+        client,
+        guildId,
+        new EmbedBuilder()
+          .setColor(0xdc2626)
+          .setTitle('[ADMINISTRACIÓN] Revocación de Administrador')
+          .addFields(
+            { name: 'Operador', value: `${req.user.username} (Panel Web)`, inline: true },
+            { name: 'Usuario Revocado', value: `<@${userId}>`, inline: true },
+            { name: 'Origen', value: 'Dashboard Web', inline: false }
+          )
+          .setFooter({ text: 'Sistema de Auditoría • Auth Gateway Web' })
+          .setTimestamp()
+      );
+    }
+
+    res.json({ success: true, removed });
+  });
+
   return app;
 }
 
@@ -556,7 +652,7 @@ function startWebServer(client) {
     console.log(`\n======================================================`);
     console.log(`🌐 [Dashboard Web] Servidor en línea en puerto: ${port}`);
     console.log(`🔗 Acceso: http://localhost:${port}`);
-    console.log(`🔑 Contraseña Maestra: ${config.web.adminPassword}`);
+    console.log(`🔒 Autenticación: Exclusiva mediante Discord OAuth2`);
     console.log(`======================================================\n`);
   });
 
