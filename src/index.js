@@ -82,6 +82,54 @@ client.once(Events.ClientReady, async () => {
   await registerSlashCommands();
   await checkAndPostPanel(guild);
   connectToVoiceChannel(guild);
+
+  // Log administrativo de encendido
+  const allStock = db.getAllStock();
+  const keyauthStock = allStock.keyauth || 0;
+  await logToAdminChannel(
+    new EmbedBuilder()
+      .setColor(0x2ecc71)
+      .setTitle('🟢 [SISTEMA INICIADO] Bot en Línea')
+      .setDescription(
+        `• **Tag:** \`${client.user.tag}\`\n` +
+          `• **Servidor:** \`${guild.name}\`\n` +
+          `• **Canal de Voz:** <#${config.discord.voiceChannelId}>\n` +
+          `• **Stock KeyAuth:** \`${keyauthStock} claves disponibles\`\n` +
+          `• **Versión:** \`Auth Gateway v2.4 (Sparked Host Production)\``
+      )
+      .setFooter({ text: 'Monitor del Sistema' })
+      .setTimestamp()
+  );
+
+  // Iniciar monitor periódico de salud
+  startSystemMonitor(guild);
+});
+
+// Eventos de conexión de Discord (Desconexión / Reconexión)
+client.on(Events.ShardDisconnect, async (event, id) => {
+  console.warn(`[Discord] ⚠️ Desconectado del WebSocket (Shard ${id}).`);
+  await logToAdminChannel(
+    new EmbedBuilder()
+      .setColor(0xe74c3c)
+      .setTitle('🔴 [DESCONEXIÓN] Bot Desconectado')
+      .setDescription(`El bot perdió la conexión con Discord WebSocket (Shard ${id}). Intentando reconectar automáticamente...`)
+      .setTimestamp()
+  );
+});
+
+client.on(Events.ShardReconnecting, async (id) => {
+  console.log(`[Discord] 🟡 Reconectando a Discord (Shard ${id})...`);
+});
+
+client.on(Events.ShardResume, async (id) => {
+  console.log(`[Discord] 🟢 Conexión reanudada (Shard ${id}).`);
+  await logToAdminChannel(
+    new EmbedBuilder()
+      .setColor(0x2ecc71)
+      .setTitle('🟢 [RECONEXIÓN EXITOSA] Bot Reanudado')
+      .setDescription(`La conexión con Discord ha sido restablecida correctamente.`)
+      .setTimestamp()
+  );
 });
 
 // Cuando el bot sea invitado al servidor
@@ -94,6 +142,7 @@ client.on('guildCreate', async (guild) => {
   }
 });
 
+let voiceReconnecting = false;
 function connectToVoiceChannel(guild) {
   const voiceChannelId = config.discord.voiceChannelId;
   if (!voiceChannelId) return;
@@ -113,17 +162,102 @@ function connectToVoiceChannel(guild) {
       selfMute: true,
     });
 
-    connection.on(VoiceConnectionStatus.Ready, () => {
+    connection.on(VoiceConnectionStatus.Ready, async () => {
       console.log(`[Voz] 🟢 Conectado exitosamente al canal de voz: ${channel.name} (${channel.id})`);
+      if (voiceReconnecting) {
+        voiceReconnecting = false;
+        await logToAdminChannel(
+          new EmbedBuilder()
+            .setColor(0x2ecc71)
+            .setTitle('🟢 [VOZ RECONECTADA] Canal de Voz')
+            .setDescription(`El bot se ha reconectado exitosamente al canal de voz <#${channel.id}>.`)
+            .setTimestamp()
+        );
+      }
     });
 
-    connection.on(VoiceConnectionStatus.Disconnected, () => {
+    connection.on(VoiceConnectionStatus.Disconnected, async () => {
       console.warn('[Voz] Conexión de voz desconectada. Reintentando en 5s...');
+      voiceReconnecting = true;
+      await logToAdminChannel(
+        new EmbedBuilder()
+          .setColor(0xe67e22)
+          .setTitle('⚠️ [VOZ DESCONECTADA] Canal de Voz')
+          .setDescription(`El bot se desconectó del canal de voz <#${voiceChannelId}>. Reintentando reconexión automática en 5 segundos...`)
+          .setTimestamp()
+      );
       setTimeout(() => connectToVoiceChannel(guild), 5000);
     });
   } catch (err) {
     console.error('[Voz] Error al conectar al canal de voz:', err.message);
   }
+}
+
+// Monitor Periódico de Salud del Sistema (cada 15 minutos)
+let notifiedKeyauthLow = false;
+function startSystemMonitor(guild) {
+  setInterval(async () => {
+    try {
+      // 1. Verificar estado de las plataformas web
+      const bypass = providerManager.get('bypass');
+      if (bypass) {
+        try {
+          await bypass.listKeys();
+        } catch (e) {
+          await logToAdminChannel(
+            new EmbedBuilder()
+              .setColor(0xe74c3c)
+              .setTitle('🚨 [FALLO DE SESIÓN] Bypass APK (172.96.172.132)')
+              .setDescription(`No se pudo verificar la sesión de Bypass APK:\n\`${e.message}\`\nEl bot intentará reautenticar automáticamente en la próxima solicitud.`)
+              .setTimestamp()
+          );
+        }
+      }
+
+      // 2. Verificar nivel de Stock de KeyAuth
+      const stock = db.getStock('keyauth');
+      if (stock.length <= 3 && !notifiedKeyauthLow) {
+        notifiedKeyauthLow = true;
+        await logToAdminChannel(
+          new EmbedBuilder()
+            .setColor(0xf39c12)
+            .setTitle('⚠️ [ALERTA DE STOCK] Stock Crítico de KeyAuth')
+            .setDescription(
+              stock.length === 0
+                ? `🔴 **El stock de KeyAuth (Elite Pro) está completamente agotado.**\nUsa \`/stock add proveedor:keyauth claves:<...>\` para recargar.`
+                : `🟡 Quedan únicamente **${stock.length} claves** de KeyAuth en stock.\nConsidera recargar pronto con \`/stock add\`.`
+            )
+            .setTimestamp()
+        );
+      } else if (stock.length > 3) {
+        notifiedKeyauthLow = false;
+      }
+
+      // 3. Revisar vencimientos de revendedores
+      const resellers = db.getAllResellers();
+      const now = Date.now();
+      for (const r of resellers) {
+        const expTime = new Date(r.expiresAt).getTime();
+        const diffMs = expTime - now;
+
+        // Si expiró hace menos de 20 minutos (notificar una sola vez)
+        if (now >= expTime && (now - expTime) < (20 * 60 * 1000)) {
+          await logToAdminChannel(
+            new EmbedBuilder()
+              .setColor(0xe74c3c)
+              .setTitle('⌛ [MEMBRESÍA EXPIRADA] Revendedor Vencido')
+              .setDescription(
+                `La membresía del revendedor <@${r.userId}> ha vencido hoy.\n` +
+                  `Ya no tiene acceso para generar claves hasta que se le renueve el tiempo con \`/revendedor asignar\`.`
+              )
+              .setTimestamp()
+          );
+        }
+      }
+    } catch (err) {
+      console.error('[Monitor] Error en rutina de monitoreo:', err.message);
+    }
+  }, 15 * 60 * 1000); // Ejecutar cada 15 minutos
 }
 
 async function checkAndPostPanel(guild) {
@@ -154,9 +288,6 @@ function getForwardTemplate({ providerName, keyOrUser, days, isAccount = false }
     const [uname, pass] = keyOrUser.includes(':') ? keyOrUser.split(':') : [keyOrUser, '1'];
     return (
       '```text\n' +
-      '╔══════════════════════════════════╗\n' +
-      '   💎 TU CUENTA OFICIAL VIP\n' +
-      '╚══════════════════════════════════╝\n' +
       `👤 Usuario: ${uname}\n` +
       `🔑 Contraseña: ${pass}\n` +
       `⏳ Duración: ${days} Días\n` +
@@ -168,9 +299,6 @@ function getForwardTemplate({ providerName, keyOrUser, days, isAccount = false }
 
   return (
     '```text\n' +
-    '╔══════════════════════════════════╗\n' +
-    '   💎 TU LICENCIA OFICIAL VIP\n' +
-    '╚══════════════════════════════════╝\n' +
     `🔑 Clave: ${keyOrUser}\n` +
     `⏳ Duración: ${days} Días\n` +
     `📱 Plataforma: ${providerName}\n` +
@@ -332,6 +460,16 @@ client.on('interactionCreate', async (interaction) => {
         if (sub === 'quitar') {
           const target = interaction.options.getUser('usuario');
           const removed = db.removeReseller(target.id);
+
+          if (removed) {
+            await logToAdminChannel(
+              new EmbedBuilder()
+                .setColor(0xe74c3c)
+                .setTitle('👤 [MEMBRESÍA REVOCADA] Revendedor Removido')
+                .setDescription(`Admin <@${interaction.user.id}> revocó la membresía a <@${target.id}>.`)
+                .setTimestamp()
+            );
+          }
 
           return interaction.reply({
             content: removed
@@ -578,6 +716,13 @@ client.on('interactionCreate', async (interaction) => {
       // GENERAR KEY
       if (customId === 'btn_create_key') {
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
+          await logToAdminChannel(
+            new EmbedBuilder()
+              .setColor(0xe67e22)
+              .setTitle('🛡️ [SEGURIDAD] Intento no Autorizado')
+              .setDescription(`Usuario <@${user.id}> (${user.tag}) intentó usar **Generar Key** sin membresía activa.`)
+              .setTimestamp()
+          );
           return interaction.reply({
             content: '⛔ **Acceso denegado:** No estás registrado como revendedor (o tu membresía ha expirado).\nEl administrador debe activarte con `/revendedor asignar @usuario dias:<días> plataformas:<lista>`',
             ephemeral: true,
@@ -625,6 +770,13 @@ client.on('interactionCreate', async (interaction) => {
       // ELIMINAR KEY
       if (customId === 'btn_delete_key') {
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
+          await logToAdminChannel(
+            new EmbedBuilder()
+              .setColor(0xe67e22)
+              .setTitle('🛡️ [SEGURIDAD] Intento no Autorizado')
+              .setDescription(`Usuario <@${user.id}> (${user.tag}) intentó usar **Eliminar Key** sin membresía activa.`)
+              .setTimestamp()
+          );
           return interaction.reply({
             content: '⛔ **Acceso denegado:** No tienes una membresía de revendedor activa.',
             ephemeral: true,
@@ -666,6 +818,13 @@ client.on('interactionCreate', async (interaction) => {
       // RESET HWID
       if (customId === 'btn_reset_hwid') {
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
+          await logToAdminChannel(
+            new EmbedBuilder()
+              .setColor(0xe67e22)
+              .setTitle('🛡️ [SEGURIDAD] Intento no Autorizado')
+              .setDescription(`Usuario <@${user.id}> (${user.tag}) intentó usar **Reset HWID** sin membresía activa.`)
+              .setTimestamp()
+          );
           return interaction.reply({
             content: '⛔ **Acceso denegado:** No tienes una membresía de revendedor activa.',
             ephemeral: true,
