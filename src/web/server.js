@@ -204,9 +204,26 @@ function createWebServer(client) {
   });
 
   // 2. Lista de Revendedores
-  app.get('/api/guilds/:guildId/resellers', requireAuth, requireGuildAccess(client, db), (req, res) => {
+  app.get('/api/guilds/:guildId/resellers', requireAuth, requireGuildAccess(client, db), async (req, res) => {
     const list = req.guildDb.getAllResellers();
-    res.json(list);
+    const enriched = await Promise.all(
+      list.map(async (r) => {
+        let tag = r.userId;
+        let avatar = null;
+        try {
+          const user = await client.users.fetch(r.userId);
+          tag = user.tag || user.username;
+          avatar = user.displayAvatarURL({ size: 64, forceStatic: true });
+        } catch (_) {}
+
+        return {
+          ...r,
+          tag,
+          avatar,
+        };
+      })
+    );
+    res.json(enriched);
   });
 
   // 3. Crear / Asignar Revendedor

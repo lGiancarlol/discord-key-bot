@@ -733,12 +733,25 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
 
           const platBadges = (r.allowedProviders || []).map(p => \`<span class="px-1.5 py-0.5 text-[10px] rounded bg-slate-800 text-slate-300 font-mono">\${p}</span>\`).join(' ');
 
+          const avatarUrl = r.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png';
+          const userDisplay = r.tag || r.userId;
+
           return \`
             <tr class="hover:bg-slate-800/30 transition">
-              <td class="py-3 px-4 font-mono text-slate-200"><@\${r.userId}> (\${r.userId})</td>
+              <td class="py-3 px-4">
+                <div class="flex items-center gap-3">
+                  <img src="\${avatarUrl}" class="w-8 h-8 rounded-full border border-slate-700 bg-slate-800 object-cover shrink-0" />
+                  <div>
+                    <div class="font-sans font-bold text-white text-sm flex items-center gap-2">
+                      \${userDisplay}
+                    </div>
+                    <div class="text-[11px] text-slate-400 font-mono">\${r.userId}</div>
+                  </div>
+                </div>
+              </td>
               <td class="py-3 px-4">\${statusBadge}</td>
               <td class="py-3 px-4">\${platBadges || '<span class="text-slate-600 text-xs">Ninguna</span>'}</td>
-              <td class="py-3 px-4 text-slate-400 text-xs">\${r.addedBy || 'Admin'}</td>
+              <td class="py-3 px-4 text-slate-400 text-xs font-sans">\${r.addedBy || 'Admin'}</td>
               <td class="py-3 px-4 text-right space-x-1">
                 <button onclick="editReseller('\${r.userId}')" title="Modificar" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition">
                   <i class="fa-solid fa-pen-to-square text-xs"></i>
@@ -825,7 +838,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
     }
 
     async function deleteReseller(userId) {
-      if (!confirm(\`¿Estás seguro de que deseas quitar la membresía a <@\${userId}>?\`)) return;
+      if (!confirm(\`¿Estás seguro de que deseas quitar la membresía a \${userId}?\`)) return;
       try {
         const res = await fetch(\`/api/guilds/\${currentGuildId}/resellers/\${userId}\`, { method: 'DELETE' });
         const data = await res.json();
@@ -920,7 +933,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
         return \`
           <tr class="hover:bg-slate-800/30 transition">
             <td class="py-3 px-4 text-slate-400">\${dateStr}</td>
-            <td class="py-3 px-4 text-slate-300"><@\${k.userId}></td>
+            <td class="py-3 px-4 text-slate-300 font-mono">\${k.userId || 'Sistema'}</td>
             <td class="py-3 px-4 text-brand-400">\${k.providerId}</td>
             <td class="py-3 px-4">
               <span class="bg-slate-950 px-2 py-1 rounded border border-slate-800 select-all">\${k.key}</span>
