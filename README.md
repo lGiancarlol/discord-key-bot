@@ -10,8 +10,24 @@ Bot de Discord interactivo para generación, eliminación y reseteo de HWID de l
   - **MyCheats** (`https://new.mycheats.net`): Generación automática con sesiones HTTP y tokens CSRF.
   - **KeyAuth** (`https://keyauth.cc`): Soporte Seller API para evitar Cloudflare WAF.
 - **Control de Permisos por Rol o Usuario:** Los dueños pueden definir qué usuarios o roles acceden a qué plataformas.
-- **Canal de Auditoría (Logs):** Registro privado de cada clave creada, eliminada o reseteada.
+- **Canal de Auditoría (Logs):** Registro privado de cada clave creada, eliminada o reseteada con identificación de rango (Admin vs Revendedor) y días restantes de membresía.
+- **🌐 Dashboard Web Multi-Servidor (Multi-Tenant):** Panel de control web completo para gestionar revendedores, stock, historial de licencias, reset de HWID y configuración de canales y credenciales independientes por servidor sin interferencias.
 - **Preparado para Sparked Host / VPS / Docker:** Consume menos de 80MB de RAM.
+
+---
+
+## 🌐 Dashboard Web Multi-Servidor
+
+El bot incluye un servidor web integrado que arranca automáticamente en el puerto especificado en `PORT` (por defecto `3000`):
+
+1. **Acceso Web:** Entra a `http://tu-ip:3000` (o a tu dominio).
+2. **Métodos de Inicio de Sesión:**
+   - **Discord OAuth2:** Haz clic en *Continuar con Discord* e ingresa con tu cuenta. El sistema detectará automáticamente los servidores donde eres Dueño o Administrador.
+   - **Contraseña Maestra:** Si aún no configuraste `DISCORD_CLIENT_SECRET`, puedes ingresar de inmediato con la contraseña maestra configurada en `DASHBOARD_ADMIN_PASSWORD` (por defecto: `admin2026`).
+3. **Aislamiento Multi-Tenant por Servidor:**
+   - Cada servidor de Discord cuenta con su propia base de datos (`data/guilds/<ID_SERVIDOR>.json`).
+   - Los revendedores, stock y licencias generadas en el Servidor A nunca interfieren ni son visibles en el Servidor B.
+   - Cada servidor puede configurar sus propias credenciales de KeyAuth, Bypass APK y WorldCheats desde la pestaña *Configuración*.
 
 ---
 

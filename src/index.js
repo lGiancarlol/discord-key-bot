@@ -16,6 +16,7 @@ const config = require('./config');
 const db = require('./database');
 const providerManager = require('./providers');
 const { createPanelPayload, createAdminPanelPayload } = require('./discord/panel');
+const { startWebServer } = require('./web/server');
 const {
   getCreateKeyModal,
   getDeleteKeyModal,
@@ -56,7 +57,8 @@ async function registerSlashCommands() {
 }
 
 // Obtener información de auditoría y membresía de un usuario
-function getUserAuditInfo(member, user, cfg = config) {
+function getUserAuditInfo(member, user, cfg = config, guildId = null) {
+  const gId = guildId || member?.guild?.id || config.discord.guildId;
   const userId = user?.id || member?.id;
   if (!userId) {
     return {
@@ -73,7 +75,7 @@ function getUserAuditInfo(member, user, cfg = config) {
   const username = user?.tag || member?.user?.tag || userId;
   const isServerOwner = member?.guild?.ownerId === userId;
   const isDiscordAdmin = member?.permissions?.has ? member.permissions.has('Administrator') : false;
-  const isDesignatedAdmin = db.isBotAdmin(userId);
+  const isDesignatedAdmin = db.forGuild(gId).isBotAdmin(userId);
   const isAdmin = isServerOwner || isDiscordAdmin || isDesignatedAdmin;
 
   if (isAdmin) {
@@ -88,7 +90,7 @@ function getUserAuditInfo(member, user, cfg = config) {
     };
   }
 
-  const reseller = db.getReseller(userId);
+  const reseller = db.forGuild(gId).getReseller(userId);
   if (reseller) {
     const expDate = reseller.expiresAt
       ? new Date(reseller.expiresAt).toLocaleDateString('es-ES', {
@@ -132,16 +134,19 @@ function getUserAuditInfo(member, user, cfg = config) {
   };
 }
 
-// Log a canal de auditoría
-async function logToAdminChannel(embed) {
-  if (!config.discord.logsChannelId) return;
+// Log a canal de auditoría (por servidor)
+async function logToAdminChannel(embed, guildId = null) {
+  const gId = guildId || config.discord.guildId;
+  const gConfig = db.forGuild(gId).getConfig();
+  const targetChannelId = gConfig?.channels?.logsChannelId || (gId === config.discord.guildId ? config.discord.logsChannelId : null);
+  if (!targetChannelId) return;
   try {
-    const channel = await client.channels.fetch(config.discord.logsChannelId);
+    const channel = await client.channels.fetch(targetChannelId).catch(() => null);
     if (channel && channel.isTextBased()) {
       await channel.send({ embeds: [embed] });
     }
   } catch (err) {
-    console.error('[Logs] Error al enviar log:', err.message);
+    console.error(`[Logs] Error al enviar log a guild ${gId}:`, err.message);
   }
 }
 
@@ -150,6 +155,13 @@ client.once(Events.ClientReady, async () => {
   console.log(`\n========================================`);
   console.log(`[Bot Online] Conectado como: ${client.user.tag}`);
   console.log(`========================================\n`);
+
+  // Iniciar servidor web y dashboard multi-servidor
+  try {
+    startWebServer(client);
+  } catch (webErr) {
+    console.error('[Dashboard Web] Error al iniciar servidor web:', webErr);
+  }
 
   const guild = client.guilds.cache.get(config.discord.guildId);
 
@@ -161,6 +173,7 @@ client.once(Events.ClientReady, async () => {
   }
 
   console.log(`[Servidor Encontrado] Conectado a: ${guild.name} (${guild.id})`);
+  db.ensureGuild(guild.id, guild.name);
   await registerSlashCommands();
   await checkAndPostPanel(guild);
   await checkAndPostAdminPanel(guild);
@@ -217,13 +230,23 @@ client.on(Events.ShardResume, async (id) => {
   );
 });
 
-// Cuando el bot sea invitado al servidor
+// Cuando el bot sea invitado a un servidor
 client.on('guildCreate', async (guild) => {
+  console.log(`[Servidor Unido] El bot fue añadido a: ${guild.name} (${guild.id})`);
+  db.ensureGuild(guild.id, guild.name);
+  try {
+    const rest = new REST({ version: '10' }).setToken(config.discord.token);
+    await rest.put(
+      Routes.applicationGuildCommands(config.discord.clientId, guild.id),
+      { body: commands.map((c) => c.toJSON()) }
+    );
+    console.log(`[Discord] Comandos registrados en ${guild.name}`);
+  } catch (err) {
+    console.error(`[Discord] Error al registrar comandos en ${guild.name}:`, err.message);
+  }
+  await checkAndPostPanel(guild);
+  await checkAndPostAdminPanel(guild);
   if (guild.id === config.discord.guildId) {
-    console.log(`[Servidor Unido] El bot fue añadido a: ${guild.name}`);
-    await registerSlashCommands();
-    await checkAndPostPanel(guild);
-    await checkAndPostAdminPanel(guild);
     connectToVoiceChannel(guild);
   }
 });
@@ -352,47 +375,50 @@ function startSystemMonitor(guild) {
 }
 
 async function checkAndPostPanel(guild) {
-  if (!config.discord.panelChannelId) return;
+  const gConfig = db.forGuild(guild.id).getConfig();
+  const channelId = gConfig?.channels?.panelChannelId || (guild.id === config.discord.guildId ? config.discord.panelChannelId : null);
+  if (!channelId) return;
   try {
-    const panelChannel = await guild.channels.fetch(config.discord.panelChannelId);
+    const panelChannel = await guild.channels.fetch(channelId).catch(() => null);
     if (panelChannel && panelChannel.isTextBased()) {
-      const messages = await panelChannel.messages.fetch({ limit: 10 });
-      const existing = messages.find(
+      const messages = await panelChannel.messages.fetch({ limit: 10 }).catch(() => null);
+      const existing = messages?.find(
         (m) => m.author.id === client.user.id && m.embeds.length > 0 && !m.embeds[0].title?.includes('ADMINISTRATIVO')
       );
       if (!existing) {
         await panelChannel.send(createPanelPayload());
-        console.log('[Panel] Panel de licencias publicado en el canal exitosamente.');
+        console.log(`[Panel] Panel de licencias publicado en el servidor ${guild.name} (${channelId}).`);
       } else {
         await existing.edit(createPanelPayload());
-        console.log('[Panel] Panel de licencias existente actualizado con el nuevo diseño.');
+        console.log(`[Panel] Panel de licencias actualizado en el servidor ${guild.name} (${channelId}).`);
       }
     }
   } catch (err) {
-    console.error('[Panel] Error al verificar/publicar panel:', err.message);
+    console.error(`[Panel] Error al verificar/publicar panel en ${guild.name}:`, err.message);
   }
 }
 
 async function checkAndPostAdminPanel(guild) {
-  const channelId = config.discord.adminPanelChannelId || '1569766838533886032';
+  const gConfig = db.forGuild(guild.id).getConfig();
+  const channelId = gConfig?.channels?.adminPanelChannelId || (guild.id === config.discord.guildId ? config.discord.adminPanelChannelId : null);
   if (!channelId) return;
   try {
-    const adminChannel = await guild.channels.fetch(channelId);
+    const adminChannel = await guild.channels.fetch(channelId).catch(() => null);
     if (adminChannel && adminChannel.isTextBased()) {
-      const messages = await adminChannel.messages.fetch({ limit: 10 });
-      const existing = messages.find(
+      const messages = await adminChannel.messages.fetch({ limit: 10 }).catch(() => null);
+      const existing = messages?.find(
         (m) => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].title?.includes('ADMINISTRATIVO')
       );
       if (!existing) {
         await adminChannel.send(createAdminPanelPayload());
-        console.log(`[AdminPanel] Panel administrativo con botones publicado en ${channelId}.`);
+        console.log(`[AdminPanel] Panel administrativo publicado en ${guild.name} (${channelId}).`);
       } else {
         await existing.edit(createAdminPanelPayload());
-        console.log(`[AdminPanel] Panel administrativo existente actualizado en ${channelId}.`);
+        console.log(`[AdminPanel] Panel administrativo actualizado en ${guild.name} (${channelId}).`);
       }
     }
   } catch (err) {
-    console.error(`[AdminPanel] Error al verificar/publicar panel administrativo en ${channelId}:`, err.message);
+    console.error(`[AdminPanel] Error al verificar/publicar panel administrativo en ${guild.name}:`, err.message);
   }
 }
 
@@ -1271,6 +1297,7 @@ client.on('interactionCreate', async (interaction) => {
 
       // Reset rápido de HWID desde el panel personal
       if (customId === 'select_quick_hwid_reset') {
+        const gId = interaction.guildId || config.discord.guildId;
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
           return interaction.reply({
             content: '⛔ **Acceso denegado:** No tienes una membresía de revendedor activa.',
@@ -1279,7 +1306,7 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         const [providerId, key] = values[0].split('|');
-        const provider = providerManager.get(providerId);
+        const provider = providerManager.getForGuild(providerId, gId, db);
 
         if (!perms.isAdmin && !perms.allowedProviders.includes(providerId)) {
           return interaction.reply({
@@ -1289,7 +1316,7 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         // Validar propiedad de la clave si no es admin
-        const keyRecord = db.findKey(key);
+        const keyRecord = db.findKey(key, gId);
         if (!perms.isAdmin && keyRecord && keyRecord.userId !== user.id) {
           return interaction.reply({
             content: '⛔ Solo puedes resetear el HWID de claves que tú mismo has generado.',
@@ -1304,7 +1331,7 @@ client.on('interactionCreate', async (interaction) => {
             content: `✅ **HWID Reseteado Exitosamente:**\n• Clave: \`${key}\`\n• Plataforma: **${provider.name}**\n• Detalle: ${result}`,
           });
 
-          const audit = getUserAuditInfo(member, user, config);
+          const audit = getUserAuditInfo(member, user, config, gId);
           await logToAdminChannel(
             new EmbedBuilder()
               .setColor(0xd97706)
@@ -1318,7 +1345,8 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Método', value: 'Selección Rápida (Mis Licencias)', inline: false }
               )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-              .setTimestamp()
+              .setTimestamp(),
+            gId
           );
         } catch (err) {
           await interaction.editReply({
@@ -1728,8 +1756,9 @@ client.on('interactionCreate', async (interaction) => {
 
       // CREAR KEY
       if (customId.startsWith('modal_create_')) {
+        const gId = interaction.guildId || config.discord.guildId;
         const providerId = customId.replace('modal_create_', '');
-        const provider = providerManager.get(providerId);
+        const provider = providerManager.getForGuild(providerId, gId, db);
 
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
           return interaction.reply({
@@ -1800,7 +1829,7 @@ client.on('interactionCreate', async (interaction) => {
             note,
           });
 
-          // Registrar en BD
+          // Registrar en BD del servidor
           for (const item of items) {
             const keyValue = typeof item === 'object' ? item.key : item;
             const itemDays = typeof item === 'object' && item.days ? item.days : days;
@@ -1811,7 +1840,7 @@ client.on('interactionCreate', async (interaction) => {
               days: itemDays,
               prefix,
               note,
-            });
+            }, gId);
           }
 
           // Plantillas de Reenvío para WhatsApp
@@ -1842,7 +1871,7 @@ client.on('interactionCreate', async (interaction) => {
           await interaction.editReply({ embeds: [successEmbed] });
 
           // Log de auditoría
-          const opAudit = getUserAuditInfo(member, user, config);
+          const opAudit = getUserAuditInfo(member, user, config, gId);
           const isVipAccount = providerId === 'mycheats';
           const title = isVipAccount ? '[AUDITORÍA] Creación de Cuenta VIP' : '[AUDITORÍA] Emisión de Licencia';
 
@@ -1868,7 +1897,7 @@ client.on('interactionCreate', async (interaction) => {
             .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
             .setTimestamp();
 
-          await logToAdminChannel(logEmbed);
+          await logToAdminChannel(logEmbed, gId);
         } catch (err) {
           console.error('[Error Create Key]', err);
           await interaction.editReply({
@@ -1879,8 +1908,9 @@ client.on('interactionCreate', async (interaction) => {
 
       // ELIMINAR KEY
       if (customId.startsWith('modal_delete_')) {
+        const gId = interaction.guildId || config.discord.guildId;
         const providerId = customId.replace('modal_delete_', '');
-        const provider = providerManager.get(providerId);
+        const provider = providerManager.getForGuild(providerId, gId, db);
         const key = interaction.fields.getTextInputValue('input_key').trim();
 
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
@@ -1899,7 +1929,7 @@ client.on('interactionCreate', async (interaction) => {
 
         // Si no es admin, solo puede eliminar claves que él mismo generó
         if (!perms.isAdmin) {
-          const keyRecord = db.findKey(key);
+          const keyRecord = db.findKey(key, gId);
           if (!keyRecord || keyRecord.userId !== user.id) {
             return interaction.reply({
               content: '⛔ **Acceso denegado:** Esta clave no existe o no fue generada por ti. No puedes eliminar claves ajenas.',
@@ -1915,7 +1945,7 @@ client.on('interactionCreate', async (interaction) => {
             content: `🗑️ **Resultado:** ${result}`,
           });
 
-          const opAudit = getUserAuditInfo(member, user, config);
+          const opAudit = getUserAuditInfo(member, user, config, gId);
           await logToAdminChannel(
             new EmbedBuilder()
               .setColor(0xdc2626)
@@ -1928,7 +1958,8 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Clave Eliminada', value: `\`${key}\``, inline: false }
               )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-              .setTimestamp()
+              .setTimestamp(),
+            gId
           );
         } catch (err) {
           await interaction.editReply({
@@ -1939,8 +1970,9 @@ client.on('interactionCreate', async (interaction) => {
 
       // RESET HWID
       if (customId.startsWith('modal_reset_')) {
+        const gId = interaction.guildId || config.discord.guildId;
         const providerId = customId.replace('modal_reset_', '');
-        const provider = providerManager.get(providerId);
+        const provider = providerManager.getForGuild(providerId, gId, db);
         const key = interaction.fields.getTextInputValue('input_key').trim();
 
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
@@ -1959,7 +1991,7 @@ client.on('interactionCreate', async (interaction) => {
 
         // Si no es admin, solo puede resetear claves que él mismo generó
         if (!perms.isAdmin) {
-          const keyRecord = db.findKey(key);
+          const keyRecord = db.findKey(key, gId);
           if (!keyRecord || keyRecord.userId !== user.id) {
             return interaction.reply({
               content: '⛔ **Acceso denegado:** Esta clave no existe o no fue generada por ti. No puedes resetear claves ajenas.',
@@ -1975,7 +2007,7 @@ client.on('interactionCreate', async (interaction) => {
             content: `🔄 **Resultado:** ${result}`,
           });
 
-          const opAudit = getUserAuditInfo(member, user, config);
+          const opAudit = getUserAuditInfo(member, user, config, gId);
           await logToAdminChannel(
             new EmbedBuilder()
               .setColor(0xd97706)
@@ -1989,7 +2021,8 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Detalle', value: `${result}`, inline: false }
               )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-              .setTimestamp()
+              .setTimestamp(),
+            gId
           );
         } catch (err) {
           await interaction.editReply({

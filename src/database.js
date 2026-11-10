@@ -1,98 +1,247 @@
 const fs = require('fs');
 const path = require('path');
+const config = require('./config');
 
 const DB_DIR = path.join(__dirname, '..', 'data');
-const DB_FILE = path.join(DB_DIR, 'db.json');
+const GUILDS_DIR = path.join(DB_DIR, 'guilds');
+const OLD_DB_FILE = path.join(DB_DIR, 'db.json');
 
-const defaultData = {
-  // Array de userIds que son Administradores del Bot designados
+const createDefaultGuildData = (guildId, guildName = '') => ({
+  guildId,
+  name: guildName || `Servidor ${guildId}`,
+  channels: {
+    panelChannelId: (guildId === config.discord.guildId ? config.discord.panelChannelId : '') || '',
+    adminPanelChannelId: (guildId === config.discord.guildId ? config.discord.adminPanelChannelId : '') || '',
+    logsChannelId: (guildId === config.discord.guildId ? config.discord.logsChannelId : '') || '',
+    voiceChannelId: (guildId === config.discord.guildId ? config.discord.voiceChannelId : '') || '',
+  },
+  providersConfig: {
+    bypass: {
+      enabled: true,
+      baseUrl: '',
+      username: '',
+      password: '',
+    },
+    bypass_uid: {
+      enabled: true,
+      baseUrl: '',
+      username: '',
+      password: '',
+    },
+    mycheats: {
+      enabled: true,
+      baseUrl: '',
+      username: '',
+      password: '',
+      appId: '',
+      defaultSubId: '',
+    },
+    keyauth: {
+      enabled: true,
+      sellerKey: '',
+    },
+  },
   botAdmins: [],
-  // userId/roleId -> { providers: ['bypass', 'mycheats'], maxDays: 30 }
   permissions: {},
-  // Revendedores: userId -> { expiresAt: ISO, allowedProviders: [], maxDays: 30, createdAt: ISO, addedBy: string }
   resellers: {},
-  // Stock de claves precargadas: providerId -> ['KEY-1', 'KEY-2', ...]
   keyStock: {
     keyauth: [],
     bypass: [],
     bypass_uid: [],
     mycheats: [],
   },
-  // array of { id, userId, providerId, key, days, prefix, note, createdAt }
   generatedKeys: [],
-};
+});
 
 class Database {
   constructor() {
-    this.data = defaultData;
+    this.guilds = {};
+    this.primaryGuildId = config.discord.guildId || 'default';
     this.init();
+  }
+
+  // Getter de compatibilidad con versiones anteriores: db.data apunta a la guild principal
+  get data() {
+    return this.getGuildData(this.primaryGuildId);
   }
 
   init() {
     if (!fs.existsSync(DB_DIR)) {
       fs.mkdirSync(DB_DIR, { recursive: true });
     }
-    if (fs.existsSync(DB_FILE)) {
+    if (!fs.existsSync(GUILDS_DIR)) {
+      fs.mkdirSync(GUILDS_DIR, { recursive: true });
+    }
+
+    // 1. Migración de archivo db.json previo a la guild principal
+    const primaryFile = path.join(GUILDS_DIR, `${this.primaryGuildId}.json`);
+    if (!fs.existsSync(primaryFile) && fs.existsSync(OLD_DB_FILE)) {
       try {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+        const raw = fs.readFileSync(OLD_DB_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
-        this.data = {
-          ...defaultData,
+        const migrated = {
+          ...createDefaultGuildData(this.primaryGuildId, 'Servidor Principal'),
           ...parsed,
           botAdmins: parsed.botAdmins || [],
-          keyStock: { ...defaultData.keyStock, ...(parsed.keyStock || {}) },
+          keyStock: { ...createDefaultGuildData(this.primaryGuildId).keyStock, ...(parsed.keyStock || {}) },
           resellers: parsed.resellers || {},
+          generatedKeys: parsed.generatedKeys || [],
         };
+        fs.writeFileSync(primaryFile, JSON.stringify(migrated, null, 2), 'utf-8');
+        console.log(`[Database] ✅ Migración multi-servidor completada para guild: ${this.primaryGuildId}`);
       } catch (err) {
-        console.error('Error reading db.json, using defaults:', err);
-        this.data = defaultData;
+        console.error('[Database] Error al migrar db.json previo:', err);
       }
-    } else {
-      this.save();
     }
+
+    // 2. Cargar todas las guilds existentes en memoria
+    this.loadAllGuilds();
+
+    // Asegurar que la guild principal siempre esté cargada
+    this.ensureGuild(this.primaryGuildId);
   }
 
-  save() {
+  loadAllGuilds() {
     try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf-8');
+      const files = fs.readdirSync(GUILDS_DIR);
+      for (const file of files) {
+        if (file.endsWith('.json')) {
+          const guildId = file.replace('.json', '');
+          try {
+            const raw = fs.readFileSync(path.join(GUILDS_DIR, file), 'utf-8');
+            const parsed = JSON.parse(raw);
+            this.guilds[guildId] = {
+              ...createDefaultGuildData(guildId),
+              ...parsed,
+              channels: { ...createDefaultGuildData(guildId).channels, ...(parsed.channels || {}) },
+              providersConfig: { ...createDefaultGuildData(guildId).providersConfig, ...(parsed.providersConfig || {}) },
+              keyStock: { ...createDefaultGuildData(guildId).keyStock, ...(parsed.keyStock || {}) },
+              resellers: parsed.resellers || {},
+              generatedKeys: parsed.generatedKeys || [],
+            };
+          } catch (err) {
+            console.error(`[Database] Error al leer archivo de guild ${guildId}:`, err);
+          }
+        }
+      }
     } catch (err) {
-      console.error('Error saving db.json:', err);
+      console.error('[Database] Error al escanear directorio de guilds:', err);
     }
   }
 
-  // ── GESTIÓN DE ADMINISTRADORES DEL BOT ──
+  ensureGuild(guildId, guildName = '') {
+    const gId = guildId || this.primaryGuildId;
+    if (!this.guilds[gId]) {
+      const gFile = path.join(GUILDS_DIR, `${gId}.json`);
+      if (fs.existsSync(gFile)) {
+        try {
+          const raw = fs.readFileSync(gFile, 'utf-8');
+          this.guilds[gId] = JSON.parse(raw);
+        } catch {
+          this.guilds[gId] = createDefaultGuildData(gId, guildName);
+        }
+      } else {
+        this.guilds[gId] = createDefaultGuildData(gId, guildName);
+        this.saveGuild(gId);
+      }
+    } else if (guildName && this.guilds[gId].name !== guildName) {
+      this.guilds[gId].name = guildName;
+      this.saveGuild(gId);
+    }
+    return this.guilds[gId];
+  }
 
-  addBotAdmin(userId) {
-    if (!this.data.botAdmins.includes(userId)) {
-      this.data.botAdmins.push(userId);
-      this.save();
+  getGuildData(guildId) {
+    const gId = guildId || this.primaryGuildId;
+    return this.ensureGuild(gId);
+  }
+
+  saveGuild(guildId) {
+    const gId = guildId || this.primaryGuildId;
+    if (!this.guilds[gId]) return;
+    try {
+      const filePath = path.join(GUILDS_DIR, `${gId}.json`);
+      fs.writeFileSync(filePath, JSON.stringify(this.guilds[gId], null, 2), 'utf-8');
+    } catch (err) {
+      console.error(`[Database] Error al guardar datos de guild ${gId}:`, err);
+    }
+  }
+
+  // Compatibilidad con llamada save() directa
+  save(guildId) {
+    this.saveGuild(guildId || this.primaryGuildId);
+  }
+
+  getGuildList() {
+    return Object.keys(this.guilds).map((id) => ({
+      id,
+      name: this.guilds[id].name || id,
+      resellersCount: Object.keys(this.guilds[id].resellers || {}).length,
+      keysCount: (this.guilds[id].generatedKeys || []).length,
+    }));
+  }
+
+  getGuildConfig(guildId) {
+    const gData = this.getGuildData(guildId);
+    return {
+      guildId: gData.guildId,
+      name: gData.name,
+      channels: gData.channels || {},
+      providersConfig: gData.providersConfig || {},
+    };
+  }
+
+  updateGuildConfig(guildId, newConfig = {}) {
+    const gData = this.getGuildData(guildId);
+    if (newConfig.name) gData.name = newConfig.name;
+    if (newConfig.channels) {
+      gData.channels = { ...gData.channels, ...newConfig.channels };
+    }
+    if (newConfig.providersConfig) {
+      gData.providersConfig = { ...gData.providersConfig, ...newConfig.providersConfig };
+    }
+    this.saveGuild(guildId);
+    return this.getGuildConfig(guildId);
+  }
+
+  // ── GESTIÓN DE ADMINISTRADORES DEL BOT (POR GUILD) ──
+
+  addBotAdmin(userId, guildId) {
+    const gData = this.getGuildData(guildId);
+    if (!gData.botAdmins.includes(userId)) {
+      gData.botAdmins.push(userId);
+      this.saveGuild(guildId);
       return true;
     }
     return false;
   }
 
-  removeBotAdmin(userId) {
-    const idx = this.data.botAdmins.indexOf(userId);
+  removeBotAdmin(userId, guildId) {
+    const gData = this.getGuildData(guildId);
+    const idx = gData.botAdmins.indexOf(userId);
     if (idx !== -1) {
-      this.data.botAdmins.splice(idx, 1);
-      this.save();
+      gData.botAdmins.splice(idx, 1);
+      this.saveGuild(guildId);
       return true;
     }
     return false;
   }
 
-  isBotAdmin(userId) {
-    return Array.isArray(this.data.botAdmins) && this.data.botAdmins.includes(userId);
+  isBotAdmin(userId, guildId) {
+    const gData = this.getGuildData(guildId);
+    return Array.isArray(gData.botAdmins) && gData.botAdmins.includes(userId);
   }
 
-  getBotAdmins() {
-    return this.data.botAdmins || [];
+  getBotAdmins(guildId) {
+    const gData = this.getGuildData(guildId);
+    return gData.botAdmins || [];
   }
 
-  // ── GESTIÓN DE REVENDEDORES POR TIEMPO ──
+  // ── GESTIÓN DE REVENDEDORES POR TIEMPO (POR GUILD) ──
 
-  getReseller(userId) {
-    const r = this.data.resellers[userId];
+  getReseller(userId, guildId) {
+    const gData = this.getGuildData(guildId);
+    const r = gData.resellers[userId];
     if (!r) return null;
 
     const expiresTime = new Date(r.expiresAt).getTime();
@@ -113,18 +262,18 @@ class Database {
     };
   }
 
-  setReseller(userId, days, allowedProviders = [], addedBy = 'Admin') {
-    const current = this.getReseller(userId);
+  setReseller(userId, days, allowedProviders = [], addedBy = 'Admin', guildId) {
+    const gData = this.getGuildData(guildId);
+    const current = this.getReseller(userId, guildId);
     let newExpiresTime;
 
-    // Si ya está activo, le sumamos los días; si ya expiró o es nuevo, desde ahora
     if (current && !current.isExpired) {
       newExpiresTime = new Date(current.expiresAt).getTime() + (Number(days) * 24 * 60 * 60 * 1000);
     } else {
       newExpiresTime = Date.now() + (Number(days) * 24 * 60 * 60 * 1000);
     }
 
-    this.data.resellers[userId] = {
+    gData.resellers[userId] = {
       expiresAt: new Date(newExpiresTime).toISOString(),
       allowedProviders: Array.isArray(allowedProviders) && allowedProviders.length > 0 
         ? allowedProviders 
@@ -135,32 +284,35 @@ class Database {
       addedBy,
     };
 
-    this.save();
-    return this.getReseller(userId);
+    this.saveGuild(guildId);
+    return this.getReseller(userId, guildId);
   }
 
-  removeReseller(userId) {
-    if (this.data.resellers[userId]) {
-      delete this.data.resellers[userId];
-      this.save();
+  removeReseller(userId, guildId) {
+    const gData = this.getGuildData(guildId);
+    if (gData.resellers[userId]) {
+      delete gData.resellers[userId];
+      this.saveGuild(guildId);
       return true;
     }
     return false;
   }
 
-  getAllResellers() {
-    return Object.keys(this.data.resellers).map((id) => this.getReseller(id));
+  getAllResellers(guildId) {
+    const gData = this.getGuildData(guildId);
+    return Object.keys(gData.resellers).map((id) => this.getReseller(id, guildId));
   }
 
-  // Permisos efectivos de un miembro
-  getUserPermissions(member, config) {
+  // Permisos efectivos de un miembro en una guild
+  getUserPermissions(member, appConfig = config, guildId) {
+    const gId = guildId || member?.guild?.id || this.primaryGuildId;
     const isServerOwner = member.guild?.ownerId === member.id;
-    const isDiscordAdmin = member.permissions?.has('Administrator');
-    const isDesignatedAdmin = this.isBotAdmin(member.id);
+    const isDiscordAdmin = member.permissions?.has ? member.permissions.has('Administrator') : false;
+    const isDesignatedAdmin = this.isBotAdmin(member.id, gId);
     const isAdmin = isServerOwner || isDiscordAdmin || isDesignatedAdmin;
 
-    // 1. Revendedor registrado explícitamente mediante comando
-    const reseller = this.getReseller(member.id);
+    // 1. Revendedor registrado explícitamente en esta guild
+    const reseller = this.getReseller(member.id, gId);
     if (reseller) {
       return {
         isAdmin,
@@ -173,20 +325,19 @@ class Database {
       };
     }
 
-    // 2. Administrador (Dueño, Admin de Discord o designado por /admin agregar)
+    // 2. Administrador
     if (isAdmin) {
       return {
         isAdmin: true,
         isReseller: true,
         isExpired: false,
         daysLeft: 9999,
-        allowedProviders: Object.keys(config.providers),
+        allowedProviders: Object.keys(appConfig.providers),
         maxDays: 90,
       };
     }
 
-    // 3. Cualquier otro usuario (aunque tenga roles en el servidor)
-    // NO tiene acceso hasta que se le asigne con /revendedor asignar
+    // 3. Usuario sin membresía
     return {
       isAdmin: false,
       isReseller: false,
@@ -197,11 +348,12 @@ class Database {
     };
   }
 
-  // ── GESTIÓN DE STOCK DE CLAVES ──
+  // ── GESTIÓN DE STOCK DE CLAVES (POR GUILD) ──
 
-  addStock(providerId, keysArray, days = 30) {
-    if (!this.data.keyStock[providerId]) {
-      this.data.keyStock[providerId] = [];
+  addStock(providerId, keysArray, days = 30, guildId) {
+    const gData = this.getGuildData(guildId);
+    if (!gData.keyStock[providerId]) {
+      gData.keyStock[providerId] = [];
     }
     const cleanKeys = keysArray
       .map((k) => k.trim())
@@ -209,52 +361,56 @@ class Database {
 
     let addedCount = 0;
     for (const k of cleanKeys) {
-      const exists = this.data.keyStock[providerId].some((item) => {
+      const exists = gData.keyStock[providerId].some((item) => {
         const val = typeof item === 'object' ? item.key : item;
         return val.toLowerCase() === k.toLowerCase();
       });
       if (!exists) {
-        this.data.keyStock[providerId].push({
+        gData.keyStock[providerId].push({
           key: k,
           days: Number(days) || 30,
         });
         addedCount++;
       }
     }
-    this.save();
+    this.saveGuild(guildId);
     return {
       added: addedCount,
-      total: this.data.keyStock[providerId].length,
+      total: gData.keyStock[providerId].length,
     };
   }
 
-  popStock(providerId) {
-    if (!this.data.keyStock[providerId] || this.data.keyStock[providerId].length === 0) {
+  popStock(providerId, guildId) {
+    const gData = this.getGuildData(guildId);
+    if (!gData.keyStock[providerId] || gData.keyStock[providerId].length === 0) {
       return null;
     }
-    const raw = this.data.keyStock[providerId].shift();
-    this.save();
+    const raw = gData.keyStock[providerId].shift();
+    this.saveGuild(guildId);
     if (typeof raw === 'object' && raw.key) {
       return raw;
     }
     return { key: raw, days: 30 };
   }
 
-  getStock(providerId) {
-    return this.data.keyStock[providerId] || [];
+  getStock(providerId, guildId) {
+    const gData = this.getGuildData(guildId);
+    return gData.keyStock[providerId] || [];
   }
 
-  getAllStock() {
+  getAllStock(guildId) {
+    const gData = this.getGuildData(guildId);
     const res = {};
-    for (const [p, keys] of Object.entries(this.data.keyStock)) {
+    for (const [p, keys] of Object.entries(gData.keyStock || {})) {
       res[p] = (keys || []).length;
     }
     return res;
   }
 
-  // ── HISTORIAL DE CLAVES ──
+  // ── HISTORIAL DE CLAVES (POR GUILD) ──
 
-  recordKey({ userId, providerId, key, days, prefix = '', note = '' }) {
+  recordKey({ userId, providerId, key, days, prefix = '', note = '' }, guildId) {
+    const gData = this.getGuildData(guildId);
     const item = {
       id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       userId,
@@ -265,25 +421,98 @@ class Database {
       note,
       createdAt: new Date().toISOString(),
     };
-    this.data.generatedKeys.push(item);
-    this.save();
+    gData.generatedKeys.push(item);
+    this.saveGuild(guildId);
     return item;
   }
 
-  getUserKeys(userId, limit = 20) {
-    return this.data.generatedKeys
+  getUserKeys(userId, limit = 20, guildId) {
+    const gData = this.getGuildData(guildId);
+    return (gData.generatedKeys || [])
       .filter((k) => k.userId === userId)
       .slice(-limit)
       .reverse();
   }
 
-  findKey(key) {
+  getAllKeys(limit = 100, guildId) {
+    const gData = this.getGuildData(guildId);
+    return (gData.generatedKeys || [])
+      .slice(-limit)
+      .reverse();
+  }
+
+  findKey(key, guildId) {
     if (!key) return null;
     const clean = key.trim().toLowerCase();
-    return this.data.generatedKeys.find((k) => {
+    
+    // Si se pasa guildId específico, buscar en esa guild
+    if (guildId) {
+      const gData = this.getGuildData(guildId);
+      return (gData.generatedKeys || []).find((k) => {
+        const kVal = (k.key || '').trim().toLowerCase();
+        return kVal === clean || kVal.includes(clean);
+      });
+    }
+
+    // Si no, buscar en la guild principal primero
+    const primaryData = this.getGuildData(this.primaryGuildId);
+    const foundPrimary = (primaryData.generatedKeys || []).find((k) => {
       const kVal = (k.key || '').trim().toLowerCase();
       return kVal === clean || kVal.includes(clean);
     });
+    if (foundPrimary) return foundPrimary;
+
+    // O en cualquier otra guild
+    for (const g of Object.values(this.guilds)) {
+      const found = (g.generatedKeys || []).find((k) => {
+        const kVal = (k.key || '').trim().toLowerCase();
+        return kVal === clean || kVal.includes(clean);
+      });
+      if (found) return found;
+    }
+
+    return null;
+  }
+
+  deleteKeyRecord(keyId, guildId) {
+    const gData = this.getGuildData(guildId);
+    const idx = (gData.generatedKeys || []).findIndex((k) => k.id === keyId || k.key === keyId);
+    if (idx !== -1) {
+      gData.generatedKeys.splice(idx, 1);
+      this.saveGuild(guildId);
+      return true;
+    }
+    return false;
+  }
+
+  // Interfaz fluida para operar sobre una guild en particular
+  forGuild(guildId) {
+    const gId = guildId || this.primaryGuildId;
+    this.ensureGuild(gId);
+    return {
+      guildId: gId,
+      getData: () => this.getGuildData(gId),
+      getConfig: () => this.getGuildConfig(gId),
+      updateConfig: (cfg) => this.updateGuildConfig(gId, cfg),
+      addBotAdmin: (userId) => this.addBotAdmin(userId, gId),
+      removeBotAdmin: (userId) => this.removeBotAdmin(userId, gId),
+      isBotAdmin: (userId) => this.isBotAdmin(userId, gId),
+      getBotAdmins: () => this.getBotAdmins(gId),
+      getReseller: (userId) => this.getReseller(userId, gId),
+      setReseller: (userId, days, allowedProviders, addedBy) => this.setReseller(userId, days, allowedProviders, addedBy, gId),
+      removeReseller: (userId) => this.removeReseller(userId, gId),
+      getAllResellers: () => this.getAllResellers(gId),
+      getUserPermissions: (member, cfg) => this.getUserPermissions(member, cfg, gId),
+      addStock: (providerId, keysArray, days) => this.addStock(providerId, keysArray, days, gId),
+      popStock: (providerId) => this.popStock(providerId, gId),
+      getStock: (providerId) => this.getStock(providerId, gId),
+      getAllStock: () => this.getAllStock(gId),
+      recordKey: (params) => this.recordKey(params, gId),
+      getUserKeys: (userId, limit) => this.getUserKeys(userId, limit, gId),
+      getAllKeys: (limit) => this.getAllKeys(limit, gId),
+      findKey: (key) => this.findKey(key, gId),
+      deleteKeyRecord: (keyId) => this.deleteKeyRecord(keyId, gId),
+    };
   }
 }
 

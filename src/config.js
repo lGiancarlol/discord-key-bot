@@ -11,6 +11,14 @@ module.exports = {
     adminRoleId: process.env.ADMIN_ROLE_ID,
     voiceChannelId: process.env.VOICE_CHANNEL_ID || '1569408755085348927',
   },
+  web: {
+    port: parseInt(process.env.PORT || process.env.WEB_PORT || '3000', 10),
+    sessionSecret: process.env.SESSION_SECRET || 'gian-auth-gateway-super-secret-key-2026',
+    clientId: process.env.CLIENT_ID,
+    clientSecret: process.env.DISCORD_CLIENT_SECRET || '',
+    dashboardUrl: process.env.DASHBOARD_URL || 'http://localhost:3000',
+    adminPassword: process.env.DASHBOARD_ADMIN_PASSWORD || 'admin2026',
+  },
   providers: {
     bypass: {
       id: 'bypass',
