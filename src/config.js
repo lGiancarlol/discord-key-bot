@@ -6,6 +6,7 @@ module.exports = {
     clientId: process.env.CLIENT_ID,
     guildId: process.env.GUILD_ID,
     panelChannelId: process.env.PANEL_CHANNEL_ID,
+    adminPanelChannelId: process.env.ADMIN_PANEL_CHANNEL_ID || '1569766838533886032',
     logsChannelId: process.env.LOGS_CHANNEL_ID,
     adminRoleId: process.env.ADMIN_ROLE_ID,
     voiceChannelId: process.env.VOICE_CHANNEL_ID || '1569408755085348927',

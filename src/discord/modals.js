@@ -43,7 +43,6 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30) {
   let title = '⚡ Crear Licencia Bypass APK';
   if (isUserAccount) title = '👤 Crear Usuario (WorldCheats Panel VIP)';
   if (isUid) title = '🛡️ Crear Licencia Bypass UID (Auto ON)';
-  if (providerId === 'keyauth') title = '🔑 Crear Licencia KeyAuth (Elite Pro)';
 
   const modal = new ModalBuilder()
     .setCustomId(`modal_create_${providerId}`)
@@ -141,8 +140,118 @@ function getResetHwidModal(providerId = 'bypass') {
   return modal;
 }
 
+// ── MODALES EXCLUSIVOS DEL PANEL ADMINISTRATIVO ──
+
+function getAdminAssignResellerModal() {
+  const modal = new ModalBuilder()
+    .setCustomId('modal_admin_assign_reseller')
+    .setTitle('👤 Asignar o Renovar Revendedor');
+
+  const userInput = new TextInputBuilder()
+    .setCustomId('input_admin_target_user')
+    .setLabel('ID o @Mención del Usuario *')
+    .setPlaceholder('Ej: 123456789012345678 o @usuario')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  const daysInput = new TextInputBuilder()
+    .setCustomId('input_admin_reseller_days')
+    .setLabel('Días de Membresía *')
+    .setPlaceholder('Ej: 30 (o 15, 60, etc.)')
+    .setStyle(TextInputStyle.Short)
+    .setMinLength(1)
+    .setMaxLength(4)
+    .setRequired(true);
+
+  const platformsInput = new TextInputBuilder()
+    .setCustomId('input_admin_reseller_platforms')
+    .setLabel('Plataformas Permitidas')
+    .setPlaceholder('all (o: bypass, bypass_uid, mycheats, keyauth)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(userInput),
+    new ActionRowBuilder().addComponents(daysInput),
+    new ActionRowBuilder().addComponents(platformsInput)
+  );
+
+  return modal;
+}
+
+function getAdminRemoveResellerModal() {
+  const modal = new ModalBuilder()
+    .setCustomId('modal_admin_remove_reseller')
+    .setTitle('❌ Quitar Revendedor');
+
+  const userInput = new TextInputBuilder()
+    .setCustomId('input_admin_target_user')
+    .setLabel('ID o @Mención del Usuario a remover *')
+    .setPlaceholder('Ej: 123456789012345678 o @usuario')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(userInput));
+  return modal;
+}
+
+function getAdminInfoResellerModal() {
+  const modal = new ModalBuilder()
+    .setCustomId('modal_admin_info_reseller')
+    .setTitle('🔍 Consultar Estado de Revendedor');
+
+  const userInput = new TextInputBuilder()
+    .setCustomId('input_admin_target_user')
+    .setLabel('ID o @Mención del Usuario a consultar *')
+    .setPlaceholder('Ej: 123456789012345678 o @usuario')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(userInput));
+  return modal;
+}
+
+function getAdminAddStockModal() {
+  const modal = new ModalBuilder()
+    .setCustomId('modal_admin_add_stock')
+    .setTitle('📦 Cargar Lote de Claves al Stock');
+
+  const providerInput = new TextInputBuilder()
+    .setCustomId('input_admin_stock_provider')
+    .setLabel('Plataforma (keyauth, bypass, etc.) *')
+    .setPlaceholder('keyauth (por defecto para Elite Pro)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false);
+
+  const daysInput = new TextInputBuilder()
+    .setCustomId('input_admin_stock_days')
+    .setLabel('Duración de estas Claves en Días *')
+    .setPlaceholder('30 (por defecto 30 días)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false);
+
+  const keysInput = new TextInputBuilder()
+    .setCustomId('input_admin_stock_keys')
+    .setLabel('Pega las Claves (separadas por espacio/línea) *')
+    .setPlaceholder('TRYHARD-XXXX-YYYY\nTRYHARD-AAAA-BBBB')
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(providerInput),
+    new ActionRowBuilder().addComponents(daysInput),
+    new ActionRowBuilder().addComponents(keysInput)
+  );
+
+  return modal;
+}
+
 module.exports = {
   getCreateKeyModal,
   getDeleteKeyModal,
   getResetHwidModal,
+  getAdminAssignResellerModal,
+  getAdminRemoveResellerModal,
+  getAdminInfoResellerModal,
+  getAdminAddStockModal,
 };

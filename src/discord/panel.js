@@ -59,4 +59,66 @@ function createPanelPayload() {
   return { embeds: [embed], components: [row1, row2] };
 }
 
-module.exports = { createPanelPayload };
+// Panel de Control Exclusivo para Administradores
+function createAdminPanelPayload() {
+  const embed = new EmbedBuilder()
+    .setColor(0xf1c40f) // Dorado VIP
+    .setTitle('👑 PANEL DE CONTROL ADMINISTRATIVO')
+    .setDescription(
+      '```ansi\n\u001b[1;33m★ CENTRO DE CONTROL & GESTIÓN DE REVENDEDORES\u001b[0m\n```\n' +
+        'Bienvenido al panel central de administración. Puedes gestionar revendedores, stock y permisos usando los botones directos sin necesidad de escribir comandos manuales.\n\n' +
+        '╭─ **ACCIONES DISPONIBLES** ────────────────╮\n' +
+        '│ 👤 **Asignar Revendedor**  ▸ Dar tiempo y páginas\n' +
+        '│ ❌ **Quitar Revendedor**   ▸ Revocar acceso total\n' +
+        '│ 🔍 **Info Revendedor**     ▸ Consultar días restantes\n' +
+        '│ 📦 **Cargar Stock**        ▸ Lote de keys para KeyAuth\n' +
+        '│ 📊 **Estado & Stock**      ▸ Ver inventario de claves\n' +
+        '│ 📋 **Lista General**       ▸ Todos los revendedores\n' +
+        '╰───────────────────────────────────────────╯\n' +
+        '⚠️ *Panel restringido: Solo Administradores del Bot pueden interactuar.*'
+    )
+    .setFooter({
+      text: 'Gestión Administrativa • Desarrollado por Gian',
+    })
+    .setTimestamp();
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('admin_btn_assign_reseller')
+      .setLabel('Asignar Revendedor')
+      .setEmoji('👤')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('admin_btn_remove_reseller')
+      .setLabel('Quitar Revendedor')
+      .setEmoji('❌')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId('admin_btn_info_reseller')
+      .setLabel('Consultar Revendedor')
+      .setEmoji('🔍')
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('admin_btn_add_stock')
+      .setLabel('Cargar Stock (KeyAuth)')
+      .setEmoji('📦')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('admin_btn_view_stock')
+      .setLabel('Ver Stock & Estado')
+      .setEmoji('📊')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('admin_btn_list_resellers')
+      .setLabel('Lista de Revendedores')
+      .setEmoji('📋')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [row1, row2] };
+}
+
+module.exports = { createPanelPayload, createAdminPanelPayload };

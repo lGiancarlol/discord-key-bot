@@ -7,6 +7,11 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   new SlashCommandBuilder()
+    .setName('admin-panel')
+    .setDescription('Publicar o actualizar el panel de control administrativo con botones')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  new SlashCommandBuilder()
     .setName('admin')
     .setDescription('Designar o remover Administradores del Bot')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
