@@ -119,6 +119,12 @@ const commands = [
             .setDescription('Claves separadas por coma, espacio o salto de línea')
             .setRequired(true)
         )
+        .addIntegerOption((opt) =>
+          opt
+            .setName('duracion')
+            .setDescription('Duración de estas claves en días (ej: 30) - por defecto 30')
+            .setRequired(false)
+        )
     )
     .addSubcommand((sub) =>
       sub

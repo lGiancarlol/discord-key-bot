@@ -6,6 +6,37 @@ const {
 } = require('discord.js');
 
 function getCreateKeyModal(providerId = 'bypass', maxDays = 30) {
+  // Modal específico para KeyAuth (Elite Pro): Funciona por stock precargado
+  if (providerId === 'keyauth') {
+    const modal = new ModalBuilder()
+      .setCustomId('modal_create_keyauth')
+      .setTitle('🔑 Reclamar KeyAuth (Elite Pro)');
+
+    const countInput = new TextInputBuilder()
+      .setCustomId('input_count')
+      .setLabel('Cantidad de Keys (1 a 5)')
+      .setPlaceholder('1 a 5 (deja en blanco para 1)')
+      .setStyle(TextInputStyle.Short)
+      .setMinLength(1)
+      .setMaxLength(1)
+      .setRequired(false);
+
+    const noteInput = new TextInputBuilder()
+      .setCustomId('input_note')
+      .setLabel('Nota / Cliente / Observación (Opcional)')
+      .setPlaceholder('Ejemplo: Cliente Discord Juan')
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(50)
+      .setRequired(false);
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(countInput),
+      new ActionRowBuilder().addComponents(noteInput)
+    );
+
+    return modal;
+  }
+
   const isUserAccount = providerId === 'mycheats';
   const isUid = providerId === 'bypass_uid';
 

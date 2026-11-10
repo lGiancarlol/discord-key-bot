@@ -199,18 +199,31 @@ class Database {
 
   // ── GESTIÓN DE STOCK DE CLAVES ──
 
-  addStock(providerId, keysArray) {
+  addStock(providerId, keysArray, days = 30) {
     if (!this.data.keyStock[providerId]) {
       this.data.keyStock[providerId] = [];
     }
     const cleanKeys = keysArray
       .map((k) => k.trim())
-      .filter((k) => k.length > 0 && !this.data.keyStock[providerId].includes(k));
+      .filter((k) => k.length > 0);
 
-    this.data.keyStock[providerId].push(...cleanKeys);
+    let addedCount = 0;
+    for (const k of cleanKeys) {
+      const exists = this.data.keyStock[providerId].some((item) => {
+        const val = typeof item === 'object' ? item.key : item;
+        return val.toLowerCase() === k.toLowerCase();
+      });
+      if (!exists) {
+        this.data.keyStock[providerId].push({
+          key: k,
+          days: Number(days) || 30,
+        });
+        addedCount++;
+      }
+    }
     this.save();
     return {
-      added: cleanKeys.length,
+      added: addedCount,
       total: this.data.keyStock[providerId].length,
     };
   }
@@ -219,9 +232,12 @@ class Database {
     if (!this.data.keyStock[providerId] || this.data.keyStock[providerId].length === 0) {
       return null;
     }
-    const key = this.data.keyStock[providerId].shift();
+    const raw = this.data.keyStock[providerId].shift();
     this.save();
-    return key;
+    if (typeof raw === 'object' && raw.key) {
+      return raw;
+    }
+    return { key: raw, days: 30 };
   }
 
   getStock(providerId) {
@@ -262,10 +278,12 @@ class Database {
   }
 
   findKey(key) {
+    if (!key) return null;
     const clean = key.trim().toLowerCase();
-    return this.data.generatedKeys.find(
-      (k) => (k.key && k.key.trim().toLowerCase() === clean) || (k.note && k.note.toLowerCase().includes(clean))
-    );
+    return this.data.generatedKeys.find((k) => {
+      const kVal = (k.key || '').trim().toLowerCase();
+      return kVal === clean || kVal.includes(clean);
+    });
   }
 }
 

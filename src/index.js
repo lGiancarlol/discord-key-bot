@@ -405,9 +405,10 @@ client.on('interactionCreate', async (interaction) => {
         if (sub === 'add') {
           const providerId = interaction.options.getString('proveedor');
           const rawKeys = interaction.options.getString('claves');
+          const duracion = interaction.options.getInteger('duracion') || 30;
           const keysList = rawKeys.split(/[\s,\n]+/).map((k) => k.trim()).filter((k) => k.length > 0);
 
-          const result = db.addStock(providerId, keysList);
+          const result = db.addStock(providerId, keysList, duracion);
           const pName = config.providers[providerId]?.name || providerId;
 
           const embed = new EmbedBuilder()
@@ -416,6 +417,7 @@ client.on('interactionCreate', async (interaction) => {
             .setDescription(
               `• **Plataforma:** \`${pName}\`\n` +
                 `• **Claves añadidas:** **+${result.added}**\n` +
+                `• **Duración configurada:** **${duracion} días**\n` +
                 `• **Stock total disponible:** **${result.total} claves**`
             )
             .setTimestamp();
@@ -424,7 +426,7 @@ client.on('interactionCreate', async (interaction) => {
             new EmbedBuilder()
               .setColor(0x2ecc71)
               .setTitle('📦 Recarga de Stock (Auditoría)')
-              .setDescription(`Admin <@${interaction.user.id}> cargó **${result.added} claves** para **${pName}**.\nTotal ahora: **${result.total}**.`)
+              .setDescription(`Admin <@${interaction.user.id}> cargó **${result.added} claves** (${duracion}d) para **${pName}**.\nTotal ahora: **${result.total}**.`)
               .setTimestamp()
           );
 
@@ -801,17 +803,66 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       if (customId === 'select_delete_provider') {
-        return interaction.showModal(getDeleteKeyModal(values[0]));
+        const selectedProvider = values[0];
+        if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** No tienes una membresía de revendedor activa.',
+            ephemeral: true,
+          });
+        }
+        if (!perms.isAdmin && !perms.allowedProviders.includes(selectedProvider)) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** No tienes acceso a esta plataforma.',
+            ephemeral: true,
+          });
+        }
+        return interaction.showModal(getDeleteKeyModal(selectedProvider));
       }
 
       if (customId === 'select_reset_provider') {
-        return interaction.showModal(getResetHwidModal(values[0]));
+        const selectedProvider = values[0];
+        if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** No tienes una membresía de revendedor activa.',
+            ephemeral: true,
+          });
+        }
+        if (!perms.isAdmin && !perms.allowedProviders.includes(selectedProvider)) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** No tienes acceso a esta plataforma.',
+            ephemeral: true,
+          });
+        }
+        return interaction.showModal(getResetHwidModal(selectedProvider));
       }
 
       // Reset rápido de HWID desde el panel personal
       if (customId === 'select_quick_hwid_reset') {
+        if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** No tienes una membresía de revendedor activa.',
+            ephemeral: true,
+          });
+        }
+
         const [providerId, key] = values[0].split('|');
         const provider = providerManager.get(providerId);
+
+        if (!perms.isAdmin && !perms.allowedProviders.includes(providerId)) {
+          return interaction.reply({
+            content: '⛔ No tienes permiso para gestionar esta plataforma.',
+            ephemeral: true,
+          });
+        }
+
+        // Validar propiedad de la clave si no es admin
+        const keyRecord = db.findKey(key);
+        if (!perms.isAdmin && keyRecord && keyRecord.userId !== user.id) {
+          return interaction.reply({
+            content: '⛔ Solo puedes resetear el HWID de claves que tú mismo has generado.',
+            ephemeral: true,
+          });
+        }
 
         await interaction.deferReply({ ephemeral: true });
         try {
@@ -866,16 +917,35 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
-        const days = parseInt(interaction.fields.getTextInputValue('input_days'), 10);
-        const count = parseInt(interaction.fields.getTextInputValue('input_count') || '1', 10);
-        const prefix = (interaction.fields.getTextInputValue('input_prefix') || '').trim();
-        const note = (interaction.fields.getTextInputValue('input_note') || '').trim();
+        let days = 30;
+        let count = 1;
+        let prefix = '';
+        let note = '';
 
-        if (isNaN(days) || days <= 0 || days > perms.maxDays) {
-          return interaction.reply({
-            content: `❌ Duración inválida. Debe ser un número entre 1 y ${perms.maxDays} días.`,
-            ephemeral: true,
-          });
+        if (providerId === 'keyauth') {
+          try {
+            count = parseInt(interaction.fields.getTextInputValue('input_count') || '1', 10);
+          } catch {
+            count = 1;
+          }
+          try {
+            note = (interaction.fields.getTextInputValue('input_note') || '').trim();
+          } catch {
+            note = '';
+          }
+          days = 30;
+        } else {
+          days = parseInt(interaction.fields.getTextInputValue('input_days'), 10);
+          count = parseInt(interaction.fields.getTextInputValue('input_count') || '1', 10);
+          prefix = (interaction.fields.getTextInputValue('input_prefix') || '').trim();
+          note = (interaction.fields.getTextInputValue('input_note') || '').trim();
+
+          if (isNaN(days) || days <= 0 || days > perms.maxDays) {
+            return interaction.reply({
+              content: `❌ Duración inválida. Debe ser un número entre 1 y ${perms.maxDays} días.`,
+              ephemeral: true,
+            });
+          }
         }
 
         if (isNaN(count) || count < 1 || count > 5) {
@@ -898,11 +968,12 @@ client.on('interactionCreate', async (interaction) => {
           // Registrar en BD
           for (const item of items) {
             const keyValue = typeof item === 'object' ? item.key : item;
+            const itemDays = typeof item === 'object' && item.days ? item.days : days;
             db.recordKey({
               userId: user.id,
               providerId,
               key: keyValue,
-              days,
+              days: itemDays,
               prefix,
               note,
             });
@@ -912,10 +983,11 @@ client.on('interactionCreate', async (interaction) => {
           const forwardTemplates = items
             .map((item) => {
               const val = typeof item === 'object' ? (item.username ? `${item.username}:1` : item.key) : item;
+              const itemDays = typeof item === 'object' && item.days ? item.days : days;
               return getForwardTemplate({
                 providerName: provider.name,
                 keyOrUser: val,
-                days,
+                days: itemDays,
                 isAccount: providerId === 'mycheats',
               });
             })
@@ -969,6 +1041,31 @@ client.on('interactionCreate', async (interaction) => {
         const provider = providerManager.get(providerId);
         const key = interaction.fields.getTextInputValue('input_key').trim();
 
+        if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** No tienes una membresía de revendedor activa.',
+            ephemeral: true,
+          });
+        }
+
+        if (!perms.isAdmin && !perms.allowedProviders.includes(providerId)) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** No tienes permiso para esta plataforma.',
+            ephemeral: true,
+          });
+        }
+
+        // Si no es admin, solo puede eliminar claves que él mismo generó
+        if (!perms.isAdmin) {
+          const keyRecord = db.findKey(key);
+          if (!keyRecord || keyRecord.userId !== user.id) {
+            return interaction.reply({
+              content: '⛔ **Acceso denegado:** Esta clave no existe o no fue generada por ti. No puedes eliminar claves ajenas.',
+              ephemeral: true,
+            });
+          }
+        }
+
         await interaction.deferReply({ ephemeral: true });
         try {
           const result = await provider.deleteKey(key);
@@ -999,6 +1096,31 @@ client.on('interactionCreate', async (interaction) => {
         const providerId = customId.replace('modal_reset_', '');
         const provider = providerManager.get(providerId);
         const key = interaction.fields.getTextInputValue('input_key').trim();
+
+        if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** No tienes una membresía de revendedor activa.',
+            ephemeral: true,
+          });
+        }
+
+        if (!perms.isAdmin && !perms.allowedProviders.includes(providerId)) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** No tienes permiso para esta plataforma.',
+            ephemeral: true,
+          });
+        }
+
+        // Si no es admin, solo puede resetear claves que él mismo generó
+        if (!perms.isAdmin) {
+          const keyRecord = db.findKey(key);
+          if (!keyRecord || keyRecord.userId !== user.id) {
+            return interaction.reply({
+              content: '⛔ **Acceso denegado:** Esta clave no existe o no fue generada por ti. No puedes resetear claves ajenas.',
+              ephemeral: true,
+            });
+          }
+        }
 
         await interaction.deferReply({ ephemeral: true });
         try {
