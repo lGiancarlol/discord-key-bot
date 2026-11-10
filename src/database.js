@@ -122,11 +122,25 @@ class Database {
 
   // Permisos efectivos de un miembro
   getUserPermissions(member, config) {
-    const hasAdminRole = member.roles?.cache?.has(config.discord.adminRoleId);
-    const isServerAdmin = member.permissions?.has('Administrator');
+    const isServerOwner = member.guild?.ownerId === member.id;
+    const isDiscordAdmin = member.permissions?.has('Administrator');
 
-    // 1. Administrador (acceso total permanente)
-    if (hasAdminRole || isServerAdmin) {
+    // 1. Revendedor registrado explícitamente mediante comando
+    const reseller = this.getReseller(member.id);
+    if (reseller) {
+      return {
+        isAdmin: isServerOwner || isDiscordAdmin,
+        isReseller: true,
+        isExpired: reseller.isExpired,
+        daysLeft: reseller.daysLeft,
+        expiresAt: reseller.expiresAt,
+        allowedProviders: reseller.isExpired ? [] : reseller.allowedProviders,
+        maxDays: reseller.maxDays,
+      };
+    }
+
+    // 2. Administrador del servidor / Dueño (si no está registrado como revendedor)
+    if (isServerOwner || isDiscordAdmin) {
       return {
         isAdmin: true,
         isReseller: true,
@@ -137,37 +151,8 @@ class Database {
       };
     }
 
-    // 2. Revendedor registrado por tiempo
-    const reseller = this.getReseller(member.id);
-    if (reseller) {
-      return {
-        isAdmin: false,
-        isReseller: true,
-        isExpired: reseller.isExpired,
-        daysLeft: reseller.daysLeft,
-        expiresAt: reseller.expiresAt,
-        allowedProviders: reseller.isExpired ? [] : reseller.allowedProviders,
-        maxDays: reseller.maxDays,
-      };
-    }
-
-    // 3. Permisos heredados por rol
-    if (member.roles?.cache) {
-      for (const roleId of member.roles.cache.keys()) {
-        if (this.data.permissions[roleId]) {
-          return {
-            isAdmin: false,
-            isReseller: true,
-            isExpired: false,
-            daysLeft: 30,
-            allowedProviders: this.data.permissions[roleId].providers || [],
-            maxDays: this.data.permissions[roleId].maxDays || 30,
-          };
-        }
-      }
-    }
-
-    // 4. Sin acceso
+    // 3. Cualquier otro usuario (aunque tenga roles en el servidor)
+    // NO tiene acceso hasta que se le asigne con /revendedor asignar
     return {
       isAdmin: false,
       isReseller: false,

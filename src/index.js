@@ -496,9 +496,9 @@ client.on('interactionCreate', async (interaction) => {
 
       // GENERAR KEY
       if (customId === 'btn_create_key') {
-        if (!perms.isAdmin && perms.isExpired) {
+        if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
           return interaction.reply({
-            content: '⛔ **Acceso denegado:** Tu membresía de revendedor ha expirado o no tienes acceso activo.\nContacta al administrador para renovar tu tiempo.',
+            content: '⛔ **Acceso denegado:** No estás registrado como revendedor (o tu membresía ha expirado).\nEl administrador debe activarte con `/revendedor asignar @usuario dias:<días> plataformas:<lista>`',
             ephemeral: true,
           });
         }
@@ -543,9 +543,9 @@ client.on('interactionCreate', async (interaction) => {
 
       // ELIMINAR KEY
       if (customId === 'btn_delete_key') {
-        if (!perms.isAdmin && perms.isExpired) {
+        if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
           return interaction.reply({
-            content: '⛔ Tu membresía de revendedor ha expirado.',
+            content: '⛔ **Acceso denegado:** No tienes una membresía de revendedor activa.',
             ephemeral: true,
           });
         }
@@ -584,9 +584,9 @@ client.on('interactionCreate', async (interaction) => {
 
       // RESET HWID
       if (customId === 'btn_reset_hwid') {
-        if (!perms.isAdmin && perms.isExpired) {
+        if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
           return interaction.reply({
-            content: '⛔ Tu membresía de revendedor ha expirado.',
+            content: '⛔ **Acceso denegado:** No tienes una membresía de revendedor activa.',
             ephemeral: true,
           });
         }
@@ -766,9 +766,9 @@ client.on('interactionCreate', async (interaction) => {
         const providerId = customId.replace('modal_create_', '');
         const provider = providerManager.get(providerId);
 
-        if (!perms.isAdmin && perms.isExpired) {
+        if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
           return interaction.reply({
-            content: '⛔ Tu membresía de revendedor ha expirado.',
+            content: '⛔ **Acceso denegado:** Tu membresía de revendedor no está activa o ha expirado.',
             ephemeral: true,
           });
         }
