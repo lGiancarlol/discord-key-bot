@@ -5,6 +5,8 @@ const DB_DIR = path.join(__dirname, '..', 'data');
 const DB_FILE = path.join(DB_DIR, 'db.json');
 
 const defaultData = {
+  // Array de userIds que son Administradores del Bot designados
+  botAdmins: [],
   // userId/roleId -> { providers: ['bypass', 'mycheats'], maxDays: 30 }
   permissions: {},
   // Revendedores: userId -> { expiresAt: ISO, allowedProviders: [], maxDays: 30, createdAt: ISO, addedBy: string }
@@ -37,6 +39,7 @@ class Database {
         this.data = {
           ...defaultData,
           ...parsed,
+          botAdmins: parsed.botAdmins || [],
           keyStock: { ...defaultData.keyStock, ...(parsed.keyStock || {}) },
           resellers: parsed.resellers || {},
         };
@@ -55,6 +58,35 @@ class Database {
     } catch (err) {
       console.error('Error saving db.json:', err);
     }
+  }
+
+  // ── GESTIÓN DE ADMINISTRADORES DEL BOT ──
+
+  addBotAdmin(userId) {
+    if (!this.data.botAdmins.includes(userId)) {
+      this.data.botAdmins.push(userId);
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  removeBotAdmin(userId) {
+    const idx = this.data.botAdmins.indexOf(userId);
+    if (idx !== -1) {
+      this.data.botAdmins.splice(idx, 1);
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  isBotAdmin(userId) {
+    return Array.isArray(this.data.botAdmins) && this.data.botAdmins.includes(userId);
+  }
+
+  getBotAdmins() {
+    return this.data.botAdmins || [];
   }
 
   // ── GESTIÓN DE REVENDEDORES POR TIEMPO ──
@@ -124,12 +156,14 @@ class Database {
   getUserPermissions(member, config) {
     const isServerOwner = member.guild?.ownerId === member.id;
     const isDiscordAdmin = member.permissions?.has('Administrator');
+    const isDesignatedAdmin = this.isBotAdmin(member.id);
+    const isAdmin = isServerOwner || isDiscordAdmin || isDesignatedAdmin;
 
     // 1. Revendedor registrado explícitamente mediante comando
     const reseller = this.getReseller(member.id);
     if (reseller) {
       return {
-        isAdmin: isServerOwner || isDiscordAdmin,
+        isAdmin,
         isReseller: true,
         isExpired: reseller.isExpired,
         daysLeft: reseller.daysLeft,
@@ -139,8 +173,8 @@ class Database {
       };
     }
 
-    // 2. Administrador del servidor / Dueño (si no está registrado como revendedor)
-    if (isServerOwner || isDiscordAdmin) {
+    // 2. Administrador (Dueño, Admin de Discord o designado por /admin agregar)
+    if (isAdmin) {
       return {
         isAdmin: true,
         isReseller: true,

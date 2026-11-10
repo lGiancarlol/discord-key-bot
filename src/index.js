@@ -195,6 +195,85 @@ client.on('interactionCreate', async (interaction) => {
         });
       }
 
+      // /admin (Gestión de Administradores del Bot)
+      if (commandName === 'admin') {
+        const sub = interaction.options.getSubcommand();
+
+        if (sub === 'agregar') {
+          const target = interaction.options.getUser('usuario');
+          const added = db.addBotAdmin(target.id);
+
+          if (added) {
+            const embed = new EmbedBuilder()
+              .setColor(0x2ecc71)
+              .setTitle('👑 Nuevo Administrador del Bot')
+              .setDescription(
+                `Se ha nombrado a <@${target.id}> (${target.tag}) como **Administrador del Bot**.\nAhora tiene acceso total para gestionar revendedores, stock y paneles.`
+              )
+              .setTimestamp();
+
+            await logToAdminChannel(
+              new EmbedBuilder()
+                .setColor(0x2ecc71)
+                .setTitle('👑 Admin Añadido')
+                .setDescription(`Dueño <@${interaction.user.id}> nombró admin a <@${target.id}>.`)
+                .setTimestamp()
+            );
+
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+          } else {
+            return interaction.reply({
+              content: `ℹ️ El usuario <@${target.id}> ya era Administrador del Bot.`,
+              ephemeral: true,
+            });
+          }
+        }
+
+        if (sub === 'quitar') {
+          const target = interaction.options.getUser('usuario');
+          const removed = db.removeBotAdmin(target.id);
+
+          if (removed) {
+            await logToAdminChannel(
+              new EmbedBuilder()
+                .setColor(0xe74c3c)
+                .setTitle('👑 Admin Removido')
+                .setDescription(`Dueño <@${interaction.user.id}> quitó el rango de admin a <@${target.id}>.`)
+                .setTimestamp()
+            );
+
+            return interaction.reply({
+              content: `🗑️ Se ha revocado el rango de Administrador del Bot a <@${target.id}>.`,
+              ephemeral: true,
+            });
+          } else {
+            return interaction.reply({
+              content: `⚠️ El usuario <@${target.id}> no estaba en la lista de Administradores designados.`,
+              ephemeral: true,
+            });
+          }
+        }
+
+        if (sub === 'lista') {
+          const list = db.getBotAdmins();
+          const serverOwnerId = interaction.guild?.ownerId;
+
+          const lines = [
+            `• 👑 **Dueño del Servidor:** <@${serverOwnerId}>`,
+            ...list.map((id) => `• 🛡️ **Admin Designado:** <@${id}>`),
+          ];
+
+          const embed = new EmbedBuilder()
+            .setColor(0xf1c40f)
+            .setTitle('👑 Administradores del Bot')
+            .setDescription(lines.join('\n'))
+            .setFooter({ text: 'Sistema de Administradores' })
+            .setTimestamp();
+
+          return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+      }
+
       // /revendedor
       if (commandName === 'revendedor') {
         const sub = interaction.options.getSubcommand();

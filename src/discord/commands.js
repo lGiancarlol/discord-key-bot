@@ -7,6 +7,38 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   new SlashCommandBuilder()
+    .setName('admin')
+    .setDescription('Designar o remover Administradores del Bot')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addSubcommand((sub) =>
+      sub
+        .setName('agregar')
+        .setDescription('Nombrar a un usuario como Administrador del Bot')
+        .addUserOption((opt) =>
+          opt
+            .setName('usuario')
+            .setDescription('Usuario a designar como Admin')
+            .setRequired(true)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('quitar')
+        .setDescription('Quitar rango de Administrador del Bot a un usuario')
+        .addUserOption((opt) =>
+          opt
+            .setName('usuario')
+            .setDescription('Usuario a remover de Administradores')
+            .setRequired(true)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('lista')
+        .setDescription('Ver lista de Administradores designados del Bot')
+    ),
+
+  new SlashCommandBuilder()
     .setName('revendedor')
     .setDescription('Gestión de membresías y tiempos para revendedores')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
