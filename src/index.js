@@ -55,6 +55,83 @@ async function registerSlashCommands() {
   }
 }
 
+// Obtener información de auditoría y membresía de un usuario
+function getUserAuditInfo(member, user, cfg = config) {
+  const userId = user?.id || member?.id;
+  if (!userId) {
+    return {
+      userId: 'Desconocido',
+      username: 'Desconocido',
+      role: 'Desconocido',
+      membership: 'No disponible',
+      daysLeft: 0,
+      isAdmin: false,
+      isReseller: false,
+    };
+  }
+
+  const username = user?.tag || member?.user?.tag || userId;
+  const isServerOwner = member?.guild?.ownerId === userId;
+  const isDiscordAdmin = member?.permissions?.has ? member.permissions.has('Administrator') : false;
+  const isDesignatedAdmin = db.isBotAdmin(userId);
+  const isAdmin = isServerOwner || isDiscordAdmin || isDesignatedAdmin;
+
+  if (isAdmin) {
+    return {
+      userId,
+      username,
+      role: 'Administrador',
+      membership: 'Acceso Ilimitado Permanente',
+      daysLeft: null,
+      isAdmin: true,
+      isReseller: false,
+    };
+  }
+
+  const reseller = db.getReseller(userId);
+  if (reseller) {
+    const expDate = reseller.expiresAt
+      ? new Date(reseller.expiresAt).toLocaleDateString('es-ES', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        })
+      : 'N/A';
+
+    if (reseller.isExpired) {
+      return {
+        userId,
+        username,
+        role: 'Revendedor (Expirado)',
+        membership: `0 días restantes (Venció: ${expDate})`,
+        daysLeft: 0,
+        isAdmin: false,
+        isReseller: true,
+      };
+    }
+
+    return {
+      userId,
+      username,
+      role: 'Revendedor',
+      membership: `${reseller.daysLeft} días restantes (Vence: ${expDate})`,
+      daysLeft: reseller.daysLeft,
+      isAdmin: false,
+      isReseller: true,
+    };
+  }
+
+  return {
+    userId,
+    username,
+    role: 'Usuario sin Membresía',
+    membership: 'Sin membresía activa',
+    daysLeft: 0,
+    isAdmin: false,
+    isReseller: false,
+  };
+}
+
 // Log a canal de auditoría
 async function logToAdminChannel(embed) {
   if (!config.discord.logsChannelId) return;
@@ -94,16 +171,16 @@ client.once(Events.ClientReady, async () => {
   const keyauthStock = allStock.keyauth || 0;
   await logToAdminChannel(
     new EmbedBuilder()
-      .setColor(0x2ecc71)
-      .setTitle('🟢 [SISTEMA INICIADO] Bot en Línea')
+      .setColor(0x16a34a)
+      .setTitle('[SISTEMA] Bot en Línea')
       .setDescription(
-        `• **Tag:** \`${client.user.tag}\`\n` +
-          `• **Servidor:** \`${guild.name}\`\n` +
-          `• **Canal de Voz:** <#${config.discord.voiceChannelId}>\n` +
-          `• **Stock KeyAuth:** \`${keyauthStock} claves disponibles\`\n` +
-          `• **Versión:** \`Auth Gateway v2.4 (Sparked Host Production)\``
+        `• Servidor: \`${guild.name}\` (\`${guild.id}\`)\n` +
+          `• Tag: \`${client.user.tag}\`\n` +
+          `• Canal de Voz 24/7: <#${config.discord.voiceChannelId}>\n` +
+          `• Stock KeyAuth: \`${keyauthStock} claves disponibles\`\n` +
+          `• Estado: Operacional`
       )
-      .setFooter({ text: 'Monitor del Sistema' })
+      .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
       .setTimestamp()
   );
 
@@ -113,27 +190,29 @@ client.once(Events.ClientReady, async () => {
 
 // Eventos de conexión de Discord (Desconexión / Reconexión)
 client.on(Events.ShardDisconnect, async (event, id) => {
-  console.warn(`[Discord] ⚠️ Desconectado del WebSocket (Shard ${id}).`);
+  console.warn(`[Discord] Desconectado del WebSocket (Shard ${id}).`);
   await logToAdminChannel(
     new EmbedBuilder()
-      .setColor(0xe74c3c)
-      .setTitle('🔴 [DESCONEXIÓN] Bot Desconectado')
-      .setDescription(`El bot perdió la conexión con Discord WebSocket (Shard ${id}). Intentando reconectar automáticamente...`)
+      .setColor(0xdc2626)
+      .setTitle('[SISTEMA] Conexión Discord Interrumpida')
+      .setDescription(`El bot perdió la conexión WebSocket (Shard ${id}). Intentando reconectar automáticamente...`)
+      .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
       .setTimestamp()
   );
 });
 
 client.on(Events.ShardReconnecting, async (id) => {
-  console.log(`[Discord] 🟡 Reconectando a Discord (Shard ${id})...`);
+  console.log(`[Discord] Reconectando a Discord (Shard ${id})...`);
 });
 
 client.on(Events.ShardResume, async (id) => {
-  console.log(`[Discord] 🟢 Conexión reanudada (Shard ${id}).`);
+  console.log(`[Discord] Conexión reanudada (Shard ${id}).`);
   await logToAdminChannel(
     new EmbedBuilder()
-      .setColor(0x2ecc71)
-      .setTitle('🟢 [RECONEXIÓN EXITOSA] Bot Reanudado')
-      .setDescription(`La conexión con Discord ha sido restablecida correctamente.`)
+      .setColor(0x16a34a)
+      .setTitle('[SISTEMA] Conexión Reanudada')
+      .setDescription(`La conexión WebSocket con Discord ha sido restablecida correctamente (Shard ${id}).`)
+      .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
       .setTimestamp()
   );
 });
@@ -170,14 +249,15 @@ function connectToVoiceChannel(guild) {
     });
 
     connection.on(VoiceConnectionStatus.Ready, async () => {
-      console.log(`[Voz] 🟢 Conectado exitosamente al canal de voz: ${channel.name} (${channel.id})`);
+      console.log(`[Voz] Conectado exitosamente al canal de voz: ${channel.name} (${channel.id})`);
       if (voiceReconnecting) {
         voiceReconnecting = false;
         await logToAdminChannel(
           new EmbedBuilder()
-            .setColor(0x2ecc71)
-            .setTitle('🟢 [VOZ RECONECTADA] Canal de Voz')
-            .setDescription(`El bot se ha reconectado exitosamente al canal de voz <#${channel.id}>.`)
+            .setColor(0x16a34a)
+            .setTitle('[SISTEMA] Canal de Voz Reconectado')
+            .setDescription(`El bot se ha reconectado al canal de voz <#${channel.id}>.`)
+            .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
             .setTimestamp()
         );
       }
@@ -188,9 +268,10 @@ function connectToVoiceChannel(guild) {
       voiceReconnecting = true;
       await logToAdminChannel(
         new EmbedBuilder()
-          .setColor(0xe67e22)
-          .setTitle('⚠️ [VOZ DESCONECTADA] Canal de Voz')
-          .setDescription(`El bot se desconectó del canal de voz <#${voiceChannelId}>. Reintentando reconexión automática en 5 segundos...`)
+          .setColor(0xd97706)
+          .setTitle('[SISTEMA] Canal de Voz Desconectado')
+          .setDescription(`El bot se desconectó temporalmente del canal de voz <#${voiceChannelId}>. Reintentando reconexión en 5 segundos...`)
+          .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
           .setTimestamp()
       );
       setTimeout(() => connectToVoiceChannel(guild), 5000);
@@ -213,9 +294,10 @@ function startSystemMonitor(guild) {
         } catch (e) {
           await logToAdminChannel(
             new EmbedBuilder()
-              .setColor(0xe74c3c)
-              .setTitle('🚨 [FALLO DE SESIÓN] Bypass APK (172.96.172.132)')
-              .setDescription(`No se pudo verificar la sesión de Bypass APK:\n\`${e.message}\`\nEl bot intentará reautenticar automáticamente en la próxima solicitud.`)
+              .setColor(0xdc2626)
+              .setTitle('[SISTEMA] Error de Sesión en Plataforma Web')
+              .setDescription(`Fallo al verificar sesión con Bypass APK (172.96.172.132):\n\`${e.message}\`\nEl bot reintentará la autenticación en la próxima solicitud.`)
+              .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
               .setTimestamp()
           );
         }
@@ -227,13 +309,14 @@ function startSystemMonitor(guild) {
         notifiedKeyauthLow = true;
         await logToAdminChannel(
           new EmbedBuilder()
-            .setColor(0xf39c12)
-            .setTitle('⚠️ [ALERTA DE STOCK] Stock Crítico de KeyAuth')
+            .setColor(0xd97706)
+            .setTitle('[STOCK] Nivel Crítico de Inventario')
             .setDescription(
               stock.length === 0
-                ? `🔴 **El stock de KeyAuth (Elite Pro) está completamente agotado.**\nUsa \`/stock add proveedor:keyauth claves:<...>\` para recargar.`
-                : `🟡 Quedan únicamente **${stock.length} claves** de KeyAuth en stock.\nConsidera recargar pronto con \`/stock add\`.`
+                ? `El inventario de KeyAuth (Elite Pro) está completamente agotado.\nSe requiere recarga desde el Panel Administrativo o comando /stock add.`
+                : `Quedan únicamente **${stock.length} claves** de KeyAuth en inventario.`
             )
+            .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
             .setTimestamp()
         );
       } else if (stock.length > 3) {
@@ -251,12 +334,13 @@ function startSystemMonitor(guild) {
         if (now >= expTime && (now - expTime) < (20 * 60 * 1000)) {
           await logToAdminChannel(
             new EmbedBuilder()
-              .setColor(0xe74c3c)
-              .setTitle('⌛ [MEMBRESÍA EXPIRADA] Revendedor Vencido')
+              .setColor(0xdc2626)
+              .setTitle('[MEMBRESÍA] Vencimiento de Revendedor')
               .setDescription(
                 `La membresía del revendedor <@${r.userId}> ha vencido hoy.\n` +
-                  `Ya no tiene acceso para generar claves hasta que se le renueve el tiempo con \`/revendedor asignar\`.`
+                  `El usuario no podrá generar claves hasta que se le renueve el tiempo con el comando /revendedor asignar o desde el Panel Administrativo.`
               )
+              .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
               .setTimestamp()
           );
         }
@@ -385,11 +469,18 @@ client.on('interactionCreate', async (interaction) => {
               )
               .setTimestamp();
 
+            const opAudit = getUserAuditInfo(interaction.member, interaction.user, config);
             await logToAdminChannel(
               new EmbedBuilder()
-                .setColor(0x2ecc71)
-                .setTitle('👑 Admin Añadido')
-                .setDescription(`Dueño <@${interaction.user.id}> nombró admin a <@${target.id}>.`)
+                .setColor(0x16a34a)
+                .setTitle('[ADMINISTRACIÓN] Asignación de Administrador')
+                .addFields(
+                  { name: 'Operador', value: `<@${interaction.user.id}>`, inline: true },
+                  { name: 'Rango Operador', value: opAudit.role, inline: true },
+                  { name: 'Usuario Designado', value: `<@${target.id}>`, inline: true },
+                  { name: 'Detalle', value: 'Privilegios totales concedidos sobre el bot.', inline: false }
+                )
+                .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
                 .setTimestamp()
             );
 
@@ -407,11 +498,17 @@ client.on('interactionCreate', async (interaction) => {
           const removed = db.removeBotAdmin(target.id);
 
           if (removed) {
+            const opAudit = getUserAuditInfo(interaction.member, interaction.user, config);
             await logToAdminChannel(
               new EmbedBuilder()
-                .setColor(0xe74c3c)
-                .setTitle('👑 Admin Removido')
-                .setDescription(`Dueño <@${interaction.user.id}> quitó el rango de admin a <@${target.id}>.`)
+                .setColor(0xdc2626)
+                .setTitle('[ADMINISTRACIÓN] Revocación de Administrador')
+                .addFields(
+                  { name: 'Operador', value: `<@${interaction.user.id}>`, inline: true },
+                  { name: 'Rango Operador', value: opAudit.role, inline: true },
+                  { name: 'Usuario Revocado', value: `<@${target.id}>`, inline: true }
+                )
+                .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
                 .setTimestamp()
             );
 
@@ -489,13 +586,21 @@ client.on('interactionCreate', async (interaction) => {
             .setFooter({ text: 'Sistema de Revendedores • Auth Gateway' })
             .setTimestamp();
 
+          const opAudit = getUserAuditInfo(interaction.member, interaction.user, config);
+          const targetAudit = getUserAuditInfo(null, target, config);
           await logToAdminChannel(
             new EmbedBuilder()
-              .setColor(0x2ecc71)
-              .setTitle('👤 Revendedor Asignado / Renovado')
-              .setDescription(
-                `Admin <@${interaction.user.id}> asignó **${dias} días** a <@${target.id}>.\nVence: \`${expDate}\``
+              .setColor(0x16a34a)
+              .setTitle('[ADMINISTRACIÓN] Asignación de Revendedor')
+              .addFields(
+                { name: 'Operador', value: `<@${interaction.user.id}>`, inline: true },
+                { name: 'Rango Operador', value: opAudit.role, inline: true },
+                { name: 'Revendedor Asignado', value: `<@${target.id}>`, inline: true },
+                { name: 'Tiempo Otorgado', value: `+${dias} días`, inline: true },
+                { name: 'Membresía Resultante', value: targetAudit.membership, inline: true },
+                { name: 'Plataformas Autorizadas', value: res.allowedProviders.map((pid) => config.providers[pid]?.name || pid).join(', '), inline: false }
               )
+              .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
               .setTimestamp()
           );
 
@@ -507,11 +612,17 @@ client.on('interactionCreate', async (interaction) => {
           const removed = db.removeReseller(target.id);
 
           if (removed) {
+            const opAudit = getUserAuditInfo(interaction.member, interaction.user, config);
             await logToAdminChannel(
               new EmbedBuilder()
-                .setColor(0xe74c3c)
-                .setTitle('👤 [MEMBRESÍA REVOCADA] Revendedor Removido')
-                .setDescription(`Admin <@${interaction.user.id}> revocó la membresía a <@${target.id}>.`)
+                .setColor(0xdc2626)
+                .setTitle('[ADMINISTRACIÓN] Revocación de Revendedor')
+                .addFields(
+                  { name: 'Operador', value: `<@${interaction.user.id}>`, inline: true },
+                  { name: 'Rango Operador', value: opAudit.role, inline: true },
+                  { name: 'Revendedor Revocado', value: `<@${target.id}>`, inline: true }
+                )
+                .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
                 .setTimestamp()
             );
           }
@@ -605,11 +716,20 @@ client.on('interactionCreate', async (interaction) => {
             )
             .setTimestamp();
 
+          const opAudit = getUserAuditInfo(interaction.member, interaction.user, config);
           await logToAdminChannel(
             new EmbedBuilder()
-              .setColor(0x2ecc71)
-              .setTitle('📦 Recarga de Stock (Auditoría)')
-              .setDescription(`Admin <@${interaction.user.id}> cargó **${result.added} claves** (${duracion}d) para **${pName}**.\nTotal ahora: **${result.total}**.`)
+              .setColor(0x16a34a)
+              .setTitle('[STOCK] Recarga de Inventario')
+              .addFields(
+                { name: 'Operador', value: `<@${interaction.user.id}>`, inline: true },
+                { name: 'Rango Operador', value: opAudit.role, inline: true },
+                { name: 'Plataforma', value: pName, inline: true },
+                { name: 'Claves Añadidas', value: `+${result.added} claves`, inline: true },
+                { name: 'Duración por Clave', value: `${duracion} días`, inline: true },
+                { name: 'Stock Total Disponible', value: `${result.total} claves`, inline: true }
+              )
+              .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
               .setTimestamp()
           );
 
@@ -761,11 +881,18 @@ client.on('interactionCreate', async (interaction) => {
       // ── BOTONES EXCLUSIVOS DEL PANEL ADMINISTRATIVO ──
       if (customId.startsWith('admin_btn_')) {
         if (!perms.isAdmin) {
+          const audit = getUserAuditInfo(member, user, config);
           await logToAdminChannel(
             new EmbedBuilder()
-              .setColor(0xe74c3c)
-              .setTitle('🚨 [SEGURIDAD] Intento de Acceso a Panel Admin')
-              .setDescription(`Usuario sin permisos <@${user.id}> (${user.tag}) intentó presionar un botón del Panel Administrativo.`)
+              .setColor(0x64748b)
+              .setTitle('[SEGURIDAD] Intento de Acceso a Panel Administrativo')
+              .addFields(
+                { name: 'Operador', value: `<@${user.id}>`, inline: true },
+                { name: 'Rango', value: audit.role, inline: true },
+                { name: 'Membresía', value: audit.membership, inline: true },
+                { name: 'Acción Bloqueada', value: `Botón: \`${customId}\``, inline: false }
+              )
+              .setFooter({ text: 'Sistema de Seguridad • Auth Gateway' })
               .setTimestamp()
           );
           return interaction.reply({
@@ -842,11 +969,18 @@ client.on('interactionCreate', async (interaction) => {
       // GENERAR KEY
       if (customId === 'btn_create_key') {
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
+          const audit = getUserAuditInfo(member, user, config);
           await logToAdminChannel(
             new EmbedBuilder()
-              .setColor(0xe67e22)
-              .setTitle('🛡️ [SEGURIDAD] Intento no Autorizado')
-              .setDescription(`Usuario <@${user.id}> (${user.tag}) intentó usar **Generar Key** sin membresía activa.`)
+              .setColor(0x64748b)
+              .setTitle('[SEGURIDAD] Intento de Acción sin Membresía Activa')
+              .addFields(
+                { name: 'Operador', value: `<@${user.id}>`, inline: true },
+                { name: 'Rango', value: audit.role, inline: true },
+                { name: 'Membresía', value: audit.membership, inline: true },
+                { name: 'Acción Intentada', value: 'Generar Clave', inline: false }
+              )
+              .setFooter({ text: 'Sistema de Seguridad • Auth Gateway' })
               .setTimestamp()
           );
           return interaction.reply({
@@ -896,11 +1030,18 @@ client.on('interactionCreate', async (interaction) => {
       // ELIMINAR KEY
       if (customId === 'btn_delete_key') {
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
+          const audit = getUserAuditInfo(member, user, config);
           await logToAdminChannel(
             new EmbedBuilder()
-              .setColor(0xe67e22)
-              .setTitle('🛡️ [SEGURIDAD] Intento no Autorizado')
-              .setDescription(`Usuario <@${user.id}> (${user.tag}) intentó usar **Eliminar Key** sin membresía activa.`)
+              .setColor(0x64748b)
+              .setTitle('[SEGURIDAD] Intento de Acción sin Membresía Activa')
+              .addFields(
+                { name: 'Operador', value: `<@${user.id}>`, inline: true },
+                { name: 'Rango', value: audit.role, inline: true },
+                { name: 'Membresía', value: audit.membership, inline: true },
+                { name: 'Acción Intentada', value: 'Eliminar Clave', inline: false }
+              )
+              .setFooter({ text: 'Sistema de Seguridad • Auth Gateway' })
               .setTimestamp()
           );
           return interaction.reply({
@@ -944,11 +1085,18 @@ client.on('interactionCreate', async (interaction) => {
       // RESET HWID
       if (customId === 'btn_reset_hwid') {
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
+          const audit = getUserAuditInfo(member, user, config);
           await logToAdminChannel(
             new EmbedBuilder()
-              .setColor(0xe67e22)
-              .setTitle('🛡️ [SEGURIDAD] Intento no Autorizado')
-              .setDescription(`Usuario <@${user.id}> (${user.tag}) intentó usar **Reset HWID** sin membresía activa.`)
+              .setColor(0x64748b)
+              .setTitle('[SEGURIDAD] Intento de Acción sin Membresía Activa')
+              .addFields(
+                { name: 'Operador', value: `<@${user.id}>`, inline: true },
+                { name: 'Rango', value: audit.role, inline: true },
+                { name: 'Membresía', value: audit.membership, inline: true },
+                { name: 'Acción Intentada', value: 'Restablecer HWID', inline: false }
+              )
+              .setFooter({ text: 'Sistema de Seguridad • Auth Gateway' })
               .setTimestamp()
           );
           return interaction.reply({
@@ -1156,11 +1304,20 @@ client.on('interactionCreate', async (interaction) => {
             content: `✅ **HWID Reseteado Exitosamente:**\n• Clave: \`${key}\`\n• Plataforma: **${provider.name}**\n• Detalle: ${result}`,
           });
 
+          const audit = getUserAuditInfo(member, user, config);
           await logToAdminChannel(
             new EmbedBuilder()
-              .setColor(0xf39c12)
-              .setTitle('🔄 HWID Reseteado por Revendedor')
-              .setDescription(`Revendedor <@${user.id}> reseteó HWID de su clave: \`${key}\` (${provider.name}).`)
+              .setColor(0xd97706)
+              .setTitle('[AUDITORÍA] Restablecimiento de HWID')
+              .addFields(
+                { name: 'Operador', value: `<@${user.id}>`, inline: true },
+                { name: 'Rango', value: audit.role, inline: true },
+                { name: 'Membresía', value: audit.membership, inline: true },
+                { name: 'Plataforma', value: provider.name, inline: true },
+                { name: 'Clave / Licencia', value: `\`${key}\``, inline: false },
+                { name: 'Método', value: 'Selección Rápida (Mis Licencias)', inline: false }
+              )
+              .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
               .setTimestamp()
           );
         } catch (err) {
@@ -1211,11 +1368,21 @@ client.on('interactionCreate', async (interaction) => {
           .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
           .setTimestamp();
 
+        const opAudit = getUserAuditInfo(member, user, config);
+        const targetAudit = getUserAuditInfo(null, { id: targetId }, config);
         await logToAdminChannel(
           new EmbedBuilder()
-            .setColor(0x2ecc71)
-            .setTitle('👤 [PANEL ADMIN] Revendedor Asignado / Renovado')
-            .setDescription(`Admin <@${user.id}> asignó **${dias} días** a <@${targetId}> con plataformas: \`${res.allowedProviders.join(', ')}\`.`)
+            .setColor(0x16a34a)
+            .setTitle('[ADMINISTRACIÓN] Asignación de Revendedor')
+            .addFields(
+              { name: 'Operador', value: `<@${user.id}>`, inline: true },
+              { name: 'Rango Operador', value: opAudit.role, inline: true },
+              { name: 'Revendedor Asignado', value: `<@${targetId}>`, inline: true },
+              { name: 'Tiempo Otorgado', value: `+${dias} días`, inline: true },
+              { name: 'Membresía Resultante', value: targetAudit.membership, inline: true },
+              { name: 'Plataformas Autorizadas', value: platNames.join(', '), inline: false }
+            )
+            .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
             .setTimestamp()
         );
 
@@ -1263,11 +1430,20 @@ client.on('interactionCreate', async (interaction) => {
           .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
           .setTimestamp();
 
+        const opAudit = getUserAuditInfo(member, user, config);
+        const targetAudit = getUserAuditInfo(null, { id: targetId }, config);
         await logToAdminChannel(
           new EmbedBuilder()
-            .setColor(0x3498db)
-            .setTitle('🔐 [PANEL ADMIN] Permisos Modificados')
-            .setDescription(`Admin <@${user.id}> actualizó las plataformas para <@${targetId}>: \`${platforms.join(', ')}\`.`)
+            .setColor(0x2563eb)
+            .setTitle('[ADMINISTRACIÓN] Modificación de Permisos')
+            .addFields(
+              { name: 'Operador', value: `<@${user.id}>`, inline: true },
+              { name: 'Rango Operador', value: opAudit.role, inline: true },
+              { name: 'Revendedor', value: `<@${targetId}>`, inline: true },
+              { name: 'Membresía Actual', value: targetAudit.membership, inline: true },
+              { name: 'Plataformas Autorizadas', value: platNames.join(', '), inline: false }
+            )
+            .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
             .setTimestamp()
         );
 
@@ -1419,11 +1595,18 @@ client.on('interactionCreate', async (interaction) => {
         const removed = db.removeReseller(targetId);
 
         if (removed) {
+          const opAudit = getUserAuditInfo(member, user, config);
           await logToAdminChannel(
             new EmbedBuilder()
-              .setColor(0xe74c3c)
-              .setTitle('👤 [PANEL ADMIN] Revendedor Removido')
-              .setDescription(`Admin <@${user.id}> revocó la membresía a <@${targetId}> desde el Panel Administrativo.`)
+              .setColor(0xdc2626)
+              .setTitle('[ADMINISTRACIÓN] Revocación de Revendedor')
+              .addFields(
+                { name: 'Operador', value: `<@${user.id}>`, inline: true },
+                { name: 'Rango Operador', value: opAudit.role, inline: true },
+                { name: 'Revendedor Revocado', value: `<@${targetId}>`, inline: true },
+                { name: 'Origen', value: 'Panel Administrativo Interactivo', inline: false }
+              )
+              .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
               .setTimestamp()
           );
         }
@@ -1523,11 +1706,20 @@ client.on('interactionCreate', async (interaction) => {
           .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
           .setTimestamp();
 
+        const opAudit = getUserAuditInfo(member, user, config);
         await logToAdminChannel(
           new EmbedBuilder()
-            .setColor(0x2ecc71)
-            .setTitle('📦 [PANEL ADMIN] Recarga de Stock')
-            .setDescription(`Admin <@${user.id}> cargó **${result.added} claves** (${dias}d) para **${pName}** desde el Panel Admin.\nTotal ahora: **${result.total}**.`)
+            .setColor(0x16a34a)
+            .setTitle('[STOCK] Recarga de Inventario')
+            .addFields(
+              { name: 'Operador', value: `<@${user.id}>`, inline: true },
+              { name: 'Rango Operador', value: opAudit.role, inline: true },
+              { name: 'Plataforma', value: pName, inline: true },
+              { name: 'Claves Añadidas', value: `+${result.added} claves`, inline: true },
+              { name: 'Duración por Clave', value: `${dias} días`, inline: true },
+              { name: 'Stock Total Disponible', value: `${result.total} claves`, inline: true }
+            )
+            .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
             .setTimestamp()
         );
 
@@ -1650,23 +1842,30 @@ client.on('interactionCreate', async (interaction) => {
           await interaction.editReply({ embeds: [successEmbed] });
 
           // Log de auditoría
+          const opAudit = getUserAuditInfo(member, user, config);
+          const isVipAccount = providerId === 'mycheats';
+          const title = isVipAccount ? '[AUDITORÍA] Creación de Cuenta VIP' : '[AUDITORÍA] Emisión de Licencia';
+
           const logEmbed = new EmbedBuilder()
-            .setColor(0x3498db)
-            .setTitle(providerId === 'mycheats' ? '👤 Usuario Creado por Revendedor' : '🔑 Licencia Creada por Revendedor')
+            .setColor(0x2563eb)
+            .setTitle(title)
             .addFields(
-              { name: 'Revendedor', value: `<@${user.id}> (${user.tag})`, inline: true },
+              { name: 'Operador', value: `<@${user.id}>`, inline: true },
+              { name: 'Rango', value: opAudit.role, inline: true },
+              { name: 'Membresía', value: opAudit.membership, inline: true },
               { name: 'Plataforma', value: provider.name, inline: true },
               { name: 'Duración', value: `${days} días`, inline: true },
+              { name: 'Cantidad', value: `${count} unidad(es)`, inline: true },
               {
-                name: 'Claves / Cuentas',
+                name: isVipAccount ? 'Cuentas Generadas' : 'Claves Generadas',
                 value: items
                   .map((k) => (typeof k === 'object' ? (k.username ? `||\`${k.username}:1\`||` : `||\`${k.key}\`||`) : `||\`${k}\`||`))
                   .join('\n'),
                 inline: false,
               },
-              { name: 'Nota', value: note || 'Sin nota', inline: false }
+              { name: 'Cliente / Nota', value: note || 'Sin nota registrada', inline: false }
             )
-            .setFooter({ text: 'Log Automático • Auth System' })
+            .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
             .setTimestamp();
 
           await logToAdminChannel(logEmbed);
@@ -1716,15 +1915,19 @@ client.on('interactionCreate', async (interaction) => {
             content: `🗑️ **Resultado:** ${result}`,
           });
 
+          const opAudit = getUserAuditInfo(member, user, config);
           await logToAdminChannel(
             new EmbedBuilder()
-              .setColor(0xe74c3c)
-              .setTitle('🗑️ Licencia Eliminada')
+              .setColor(0xdc2626)
+              .setTitle('[AUDITORÍA] Revocación de Licencia')
               .addFields(
-                { name: 'Usuario', value: `<@${user.id}>`, inline: true },
+                { name: 'Operador', value: `<@${user.id}>`, inline: true },
+                { name: 'Rango', value: opAudit.role, inline: true },
+                { name: 'Membresía', value: opAudit.membership, inline: true },
                 { name: 'Plataforma', value: provider.name, inline: true },
-                { name: 'Key', value: `\`${key}\``, inline: false }
+                { name: 'Clave Eliminada', value: `\`${key}\``, inline: false }
               )
+              .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
               .setTimestamp()
           );
         } catch (err) {
@@ -1772,15 +1975,20 @@ client.on('interactionCreate', async (interaction) => {
             content: `🔄 **Resultado:** ${result}`,
           });
 
+          const opAudit = getUserAuditInfo(member, user, config);
           await logToAdminChannel(
             new EmbedBuilder()
-              .setColor(0xf39c12)
-              .setTitle('🔄 HWID Reseteado')
+              .setColor(0xd97706)
+              .setTitle('[AUDITORÍA] Restablecimiento de HWID')
               .addFields(
-                { name: 'Usuario', value: `<@${user.id}>`, inline: true },
+                { name: 'Operador', value: `<@${user.id}>`, inline: true },
+                { name: 'Rango', value: opAudit.role, inline: true },
+                { name: 'Membresía', value: opAudit.membership, inline: true },
                 { name: 'Plataforma', value: provider.name, inline: true },
-                { name: 'Key', value: `\`${key}\``, inline: false }
+                { name: 'Clave / Licencia', value: `\`${key}\``, inline: false },
+                { name: 'Detalle', value: `${result}`, inline: false }
               )
+              .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
               .setTimestamp()
           );
         } catch (err) {
