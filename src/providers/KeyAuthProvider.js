@@ -139,6 +139,22 @@ class KeyAuthProvider extends BaseProvider {
     return `Solicitud de reset HWID registrada para la clave: ${key}`;
   }
 
+  async checkHealth() {
+    const start = Date.now();
+    try {
+      await axios.get('https://keyauth.win', { timeout: 8000 }).catch((e) => {
+        if (e.response) return e.response;
+        throw e;
+      });
+      const latency = Date.now() - start;
+      const database = this.db || require('../database');
+      const count = database.getStock('keyauth', this.guildId).length;
+      return { online: true, latency, message: `${count} claves en stock` };
+    } catch (err) {
+      return { online: false, latency: Date.now() - start, error: err.message };
+    }
+  }
+
   async deleteKey(key) {
     if (this.sellerKey) {
       try {

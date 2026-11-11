@@ -203,6 +203,16 @@ function createWebServer(client) {
     });
   });
 
+  // 1b. Diagnóstico en Vivo de Plataformas
+  app.get('/api/guilds/:guildId/health', requireAuth, requireGuildAccess(client, db), async (req, res) => {
+    try {
+      const health = await providerManager.checkAllHealth(req.params.guildId, db);
+      res.json(health);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // 2. Lista de Revendedores
   app.get('/api/guilds/:guildId/resellers', requireAuth, requireGuildAccess(client, db), async (req, res) => {
     const list = req.guildDb.getAllResellers();

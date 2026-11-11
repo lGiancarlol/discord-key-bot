@@ -179,9 +179,24 @@ client.once(Events.ClientReady, async () => {
   await checkAndPostAdminPanel(guild);
   connectToVoiceChannel(guild);
 
-  // Log administrativo de encendido
-  const allStock = db.getAllStock();
+  // Log administrativo de encendido con diagnóstico de plataformas
+  const allStock = db.getAllStock(guild.id);
   const keyauthStock = allStock.keyauth || 0;
+
+  let platformsText = '';
+  try {
+    const health = await providerManager.checkAllHealth(guild.id, db);
+    const healthLines = Object.values(health).map((h) => {
+      const icon = h.online ? '🟢' : '🔴';
+      const ms = h.latency ? ` (\`${h.latency}ms\`)` : '';
+      const info = h.online ? (h.message || 'Activa') : `Error: ${h.error || 'Sin conexión'}`;
+      return `${icon} **${h.name}:** ${info}${ms}`;
+    });
+    if (healthLines.length > 0) {
+      platformsText = '\n\n🌐 **Estado de Plataformas Web:**\n' + healthLines.join('\n');
+    }
+  } catch (_) {}
+
   await logToAdminChannel(
     new EmbedBuilder()
       .setColor(0x16a34a)
@@ -191,7 +206,8 @@ client.once(Events.ClientReady, async () => {
           `• Tag: \`${client.user.tag}\`\n` +
           `• Canal de Voz 24/7: <#${config.discord.voiceChannelId}>\n` +
           `• Stock KeyAuth: \`${keyauthStock} claves disponibles\`\n` +
-          `• Estado: Operacional`
+          `• Estado: Operacional` +
+          platformsText
       )
       .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
       .setTimestamp()
@@ -201,33 +217,49 @@ client.once(Events.ClientReady, async () => {
   startSystemMonitor(guild);
 });
 
-// Eventos de conexión de Discord (Desconexión / Reconexión)
+// Control de eventos WebSocket (evitar spam por reanudaciones normales de red)
+let discordDisconnectTimer = null;
+let notifiedExtendedDisconnect = false;
+
 client.on(Events.ShardDisconnect, async (event, id) => {
-  console.warn(`[Discord] Desconectado del WebSocket (Shard ${id}).`);
-  await logToAdminChannel(
-    new EmbedBuilder()
-      .setColor(0xdc2626)
-      .setTitle('[SISTEMA] Conexión Discord Interrumpida')
-      .setDescription(`El bot perdió la conexión WebSocket (Shard ${id}). Intentando reconectar automáticamente...`)
-      .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-      .setTimestamp()
-  );
+  console.warn(`[Discord] Desconexión temporal del WebSocket (Shard ${id}).`);
+  if (!discordDisconnectTimer) {
+    discordDisconnectTimer = setTimeout(async () => {
+      notifiedExtendedDisconnect = true;
+      await logToAdminChannel(
+        new EmbedBuilder()
+          .setColor(0xdc2626)
+          .setTitle('[SISTEMA] Conexión Discord Interrumpida')
+          .setDescription(`El bot lleva más de 1 minuto sin conexión con Discord (Shard ${id}). Reintentando automáticamente...`)
+          .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
+          .setTimestamp()
+      );
+    }, 60000);
+  }
 });
 
 client.on(Events.ShardReconnecting, async (id) => {
-  console.log(`[Discord] Reconectando a Discord (Shard ${id})...`);
+  console.log(`[Discord] Reconectando WebSocket a Discord (Shard ${id})...`);
 });
 
 client.on(Events.ShardResume, async (id) => {
-  console.log(`[Discord] Conexión reanudada (Shard ${id}).`);
-  await logToAdminChannel(
-    new EmbedBuilder()
-      .setColor(0x16a34a)
-      .setTitle('[SISTEMA] Conexión Reanudada')
-      .setDescription(`La conexión WebSocket con Discord ha sido restablecida correctamente (Shard ${id}).`)
-      .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-      .setTimestamp()
-  );
+  console.log(`[Discord] Conexión WebSocket reanudada con éxito (Shard ${id}).`);
+  if (discordDisconnectTimer) {
+    clearTimeout(discordDisconnectTimer);
+    discordDisconnectTimer = null;
+  }
+  // Solo notificar si previamente se alertó de una caída prolongada
+  if (notifiedExtendedDisconnect) {
+    notifiedExtendedDisconnect = false;
+    await logToAdminChannel(
+      new EmbedBuilder()
+        .setColor(0x16a34a)
+        .setTitle('[SISTEMA] Conexión Discord Reanudada')
+        .setDescription(`La conexión WebSocket con Discord ha sido restablecida correctamente (Shard ${id}).`)
+        .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
+        .setTimestamp()
+    );
+  }
 });
 
 // Cuando el bot sea invitado a un servidor
@@ -306,24 +338,45 @@ function connectToVoiceChannel(guild) {
 
 // Monitor Periódico de Salud del Sistema (cada 15 minutos)
 let notifiedKeyauthLow = false;
+const platformHealthCache = {};
+
 function startSystemMonitor(guild) {
   setInterval(async () => {
     try {
-      // 1. Verificar estado de las plataformas web
-      const bypass = providerManager.get('bypass');
-      if (bypass) {
-        try {
-          await bypass.listKeys();
-        } catch (e) {
+      // 1. Verificar estado de todas las plataformas web
+      const health = await providerManager.checkAllHealth(guild.id, db);
+      for (const [pid, h] of Object.entries(health)) {
+        const wasOnline = platformHealthCache[pid]?.online ?? true;
+        if (!h.online && wasOnline) {
+          // La plataforma se cayó o no responde
           await logToAdminChannel(
             new EmbedBuilder()
               .setColor(0xdc2626)
-              .setTitle('[SISTEMA] Error de Sesión en Plataforma Web')
-              .setDescription(`Fallo al verificar sesión con Bypass APK (172.96.172.132):\n\`${e.message}\`\nEl bot reintentará la autenticación en la próxima solicitud.`)
+              .setTitle(`[ALERTA] Plataforma Fuera de Línea: ${h.name}`)
+              .setDescription(
+                `La plataforma **${h.name}** no responde a la comprobación de estado.\n\n` +
+                  `• **Error:** \`${h.error || 'Timeout / Sin respuesta'}\`\n` +
+                  `• **Acción:** El bot reintentará la conexión en la siguiente verificación.`
+              )
+              .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
+              .setTimestamp()
+          );
+        } else if (h.online && !wasOnline) {
+          // La plataforma se recuperó
+          await logToAdminChannel(
+            new EmbedBuilder()
+              .setColor(0x16a34a)
+              .setTitle(`[SISTEMA] Plataforma Restablecida: ${h.name}`)
+              .setDescription(
+                `La plataforma **${h.name}** volvió a responder correctamente.\n\n` +
+                  `• **Latencia:** \`${h.latency || 0}ms\`\n` +
+                  `• **Estado:** Operacional`
+              )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
               .setTimestamp()
           );
         }
+        platformHealthCache[pid] = h;
       }
 
       // 2. Verificar nivel de Stock de KeyAuth
@@ -976,14 +1029,28 @@ client.on('interactionCreate', async (interaction) => {
             .map(([d, c]) => `  ▫️ **${d} días:** \`${c} claves disponibles\``);
           const breakdownText = breakdownLines.length > 0 ? `\n${breakdownLines.join('\n')}` : '\n  *(Sin claves cargadas)*';
 
+          // Diagnóstico en tiempo real de las plataformas web
+          let healthText = '';
+          try {
+            const health = await providerManager.checkAllHealth(gId, db);
+            const healthLines = Object.values(health).map((h) => {
+              const hIcon = h.online ? '🟢' : '🔴';
+              const ms = h.latency ? ` (\`${h.latency}ms\`)` : '';
+              const state = h.online ? (h.message || 'Activa') : `Error: ${h.error || 'Sin conexión'}`;
+              return `${hIcon} **${h.name}:** ${state}${ms}`;
+            });
+            if (healthLines.length > 0) {
+              healthText = '\n\n🌐 **Estado de Plataformas Web (En Vivo):**\n' + healthLines.join('\n');
+            }
+          } catch (_) {}
+
           const embed = new EmbedBuilder()
             .setColor(0x00d2d3)
-            .setTitle('📦 Inventario de Stock Precargado')
+            .setTitle('📊 Inventario de Stock & Estado de Plataformas')
             .setDescription(
-              `${icon} **KeyAuth (Elite Pro):** \`${keyCount} claves en total\`${breakdownText}\n\n` +
-              `⚡ **Bypass APK / UID:** \`Generación Automática (API Directa)\`\n` +
-              `⚡ **WorldCheats:** \`Generación Automática (API Directa)\`\n\n` +
-              `💡 *Para KeyAuth puedes reclamar claves de 1 día, 7 días, 15 días o 30 días según el stock disponible.*`
+              `${icon} **KeyAuth (Elite Pro):** \`${keyCount} claves en total\`${breakdownText}` +
+              healthText +
+              `\n\n💡 *Bypass APK y WorldCheats son plataformas de generación automática en tiempo real. KeyAuth funciona por stock precargado por días.*`
             )
             .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
             .setTimestamp();

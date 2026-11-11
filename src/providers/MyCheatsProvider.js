@@ -63,6 +63,17 @@ class MyCheatsProvider extends BaseProvider {
     }
   }
 
+  async checkHealth() {
+    const start = Date.now();
+    try {
+      await this.ensureAuth();
+      const latency = Date.now() - start;
+      return { online: true, latency, message: 'Sesión activa y panel operativo' };
+    } catch (err) {
+      return { online: false, latency: Date.now() - start, error: err.message };
+    }
+  }
+
   /**
    * Generar Usuario y Contraseña en WorldCheats (MyCheats)
    * Contraseña siempre por defecto = 1

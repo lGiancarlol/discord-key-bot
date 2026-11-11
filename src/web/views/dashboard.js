@@ -228,6 +228,26 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
             </div>
           </button>
         </div>
+
+        <!-- Estado en Vivo de Plataformas Web -->
+        <div class="mt-8 pt-6 border-t border-slate-800">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-server text-brand-400"></i> Estado de Plataformas Web & APIs
+              </h3>
+              <p class="text-xs text-slate-400 mt-0.5">Monitoreo en tiempo real de conectividad y respuesta de cada panel.</p>
+            </div>
+            <button onclick="loadHealth()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg transition flex items-center gap-1.5">
+              <i class="fa-solid fa-arrows-rotate text-[11px]"></i> <span>Comprobar</span>
+            </button>
+          </div>
+          <div id="health-cards-grid" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="col-span-3 bg-slate-950/60 border border-slate-800 rounded-xl p-4 text-center text-xs text-slate-500">
+              <i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Comprobando conectividad de plataformas...
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -669,6 +689,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
       }
 
       // Cargar datos al abrir pestaña
+      if (tabId === 'overview') { loadStats(); loadHealth(); }
       if (tabId === 'resellers') loadResellers();
       if (tabId === 'stock') loadStock();
       if (tabId === 'keys') loadKeys();
@@ -707,6 +728,49 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
         document.getElementById('stat-keys-count').innerText = data.keysCount || 0;
       } catch (err) {
         console.error('Error al cargar stats:', err);
+      }
+    }
+
+    // ── Cargar Estado en Vivo de Plataformas Web ──
+    async function loadHealth() {
+      const grid = document.getElementById('health-cards-grid');
+      if (!grid) return;
+      grid.innerHTML = '<div class="col-span-3 bg-slate-950/60 border border-slate-800 rounded-xl p-4 text-center text-xs text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Comprobando conectividad de plataformas...</div>';
+      try {
+        const res = await fetch(\`/api/guilds/\${currentGuildId}/health\`);
+        const data = await res.json();
+        const entries = Object.entries(data);
+        if (entries.length === 0) {
+          grid.innerHTML = '<div class="col-span-3 text-center text-xs text-slate-500">No hay plataformas configuradas.</div>';
+          return;
+        }
+
+        grid.innerHTML = entries.map(([pid, h]) => {
+          const isOk = h.online;
+          const statusText = isOk ? 'En Línea' : 'Sin Conexión';
+          const badgeClass = isOk ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20';
+          const dotColor = isOk ? 'bg-emerald-400' : 'bg-red-400';
+          const ms = h.latency ? \`\${h.latency}ms\` : '';
+          const detail = isOk ? (h.message || 'Operativo') : (h.error || 'Fallo de conexión');
+
+          return \`
+            <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-4 shadow">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold text-white flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full \${dotColor}"></span>
+                  \${h.name}
+                </span>
+                <span class="px-2 py-0.5 text-[10px] font-medium rounded-md border \${badgeClass}">
+                  \${statusText}
+                </span>
+              </div>
+              <p class="text-xs text-slate-400 truncate" title="\${detail}">\${detail}</p>
+              \${ms ? \`<span class="text-[10px] text-slate-500 font-mono mt-1.5 block">Latencia: \${ms}</span>\` : ''}
+            </div>
+          \`;
+        }).join('');
+      } catch (err) {
+        grid.innerHTML = \`<div class="col-span-3 text-center text-xs text-red-400">Error al consultar estado: \${err.message}</div>\`;
       }
     }
 
@@ -1267,6 +1331,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
 
     // Inicializar
     loadStats();
+    loadHealth();
     handleGenProviderChange();
   </script>
 </body>

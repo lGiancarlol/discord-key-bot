@@ -99,6 +99,30 @@ class ProviderManager {
   register(id, providerInstance) {
     this.providers.set(id, providerInstance);
   }
+
+  async checkAllHealth(guildId = null, db = null) {
+    const targets = [
+      { id: 'bypass', name: 'Bypass APK (172.96.172.132)' },
+      { id: 'mycheats', name: 'WorldCheats (new.mycheats.net)' },
+      { id: 'keyauth', name: 'KeyAuth (Elite Pro)' },
+    ];
+
+    const results = {};
+    for (const t of targets) {
+      const p = this.getForGuild(t.id, guildId, db);
+      if (p && typeof p.checkHealth === 'function') {
+        try {
+          const res = await p.checkHealth();
+          results[t.id] = { name: t.name, ...res };
+        } catch (err) {
+          results[t.id] = { name: t.name, online: false, error: err.message };
+        }
+      } else {
+        results[t.id] = { name: t.name, online: true, message: 'Operativo' };
+      }
+    }
+    return results;
+  }
 }
 
 module.exports = new ProviderManager();
