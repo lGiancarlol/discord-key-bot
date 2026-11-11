@@ -272,6 +272,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
               <tr>
                 <th class="py-3.5 px-4">Usuario</th>
                 <th class="py-3.5 px-4">Estado & Vencimiento</th>
+                <th class="py-3.5 px-4">Cuota Diaria</th>
                 <th class="py-3.5 px-4">Plataformas Asignadas</th>
                 <th class="py-3.5 px-4">Asignado Por</th>
                 <th class="py-3.5 px-4 text-right">Acciones</th>
@@ -279,7 +280,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
             </thead>
             <tbody id="resellers-table-body" class="divide-y divide-slate-800/60">
               <tr>
-                <td colspan="5" class="py-8 text-center text-slate-500">Cargando revendedores...</td>
+                <td colspan="6" class="py-8 text-center text-slate-500">Cargando revendedores...</td>
               </tr>
             </tbody>
           </table>
@@ -342,12 +343,25 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
           <p class="text-xs text-slate-400 mt-0.5">Auditoría completa de todas las claves generadas en este servidor con reset de HWID instantáneo.</p>
         </div>
 
-        <!-- Buscador de Claves -->
-        <div class="w-full sm:w-72 relative">
-          <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-            <i class="fa-solid fa-magnifying-glass text-xs"></i>
-          </span>
-          <input type="text" id="searchKeysInput" placeholder="Buscar por clave, cliente o ID..." onkeyup="filterKeysTable()" class="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500">
+        <!-- Filtros y Exportación de Claves -->
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          <div class="relative w-full sm:w-64">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+              <i class="fa-solid fa-magnifying-glass text-xs"></i>
+            </span>
+            <input type="text" id="searchKeysInput" placeholder="Buscar clave, cliente o ID..." onkeyup="filterKeysTable()" class="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500">
+          </div>
+          <select id="filterKeysPlatform" onchange="filterKeysTable()" class="px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
+            <option value="">Todas las plataformas</option>
+            <option value="keyauth">KeyAuth (Elite Pro)</option>
+            <option value="bypass">Bypass APK</option>
+            <option value="bypass_uid">Bypass UID</option>
+            <option value="mycheats">WorldCheats</option>
+          </select>
+          <button onclick="exportKeysToCSV()" class="flex items-center justify-center gap-2 px-3.5 py-2 bg-emerald-700/30 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 rounded-xl text-sm font-medium transition whitespace-nowrap shadow-sm">
+            <i class="fa-solid fa-file-excel text-xs"></i>
+            <span>Exportar Excel</span>
+          </button>
         </div>
       </div>
 
@@ -553,6 +567,80 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
           </form>
         </div>
       </div>
+
+      <!-- Fila 2: Plantilla de Entrega y Respaldos -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Plantilla de Entrega (WhatsApp / Telegram) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <h3 class="text-base font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+            <i class="fa-brands fa-whatsapp text-emerald-400"></i> Plantilla de Entrega (WhatsApp)
+          </h3>
+          <p class="text-xs text-slate-400">Personaliza el formato del mensaje que recibirán tus clientes cuando se generen licencias en Discord o en este Panel Web.</p>
+
+          <form id="formCustomTemplate" onsubmit="saveCustomTemplate(event)" class="space-y-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Nombre de la Tienda / Encabezado</label>
+              <input type="text" id="cfg_template_storeName" oninput="updateTemplatePreview()" placeholder="Gian Store VIP" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Texto de Advertencia / Nota</label>
+              <input type="text" id="cfg_template_noteText" oninput="updateTemplatePreview()" placeholder="Válida para 1 solo dispositivo." class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Pie de Mensaje / Contacto & Soporte</label>
+              <input type="text" id="cfg_template_footerText" oninput="updateTemplatePreview()" placeholder="Soporte: +58 412... | Discord: discord.gg/..." class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
+            </div>
+
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-1.5 uppercase tracking-wider font-semibold">Vista Previa en Vivo</label>
+              <pre id="templatePreviewBox" class="p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-emerald-400 select-all whitespace-pre-wrap"></pre>
+            </div>
+
+            <button type="submit" class="flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm rounded-xl transition">
+              <i class="fa-solid fa-floppy-disk text-xs"></i>
+              <span>Guardar Plantilla de Entrega</span>
+            </button>
+          </form>
+        </div>
+
+        <!-- Copia de Seguridad & Respaldos -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4 flex flex-col justify-between">
+          <div class="space-y-4">
+            <h3 class="text-base font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+              <i class="fa-solid fa-database text-amber-400"></i> Base de Datos & Copia de Seguridad
+            </h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Tu servidor cuenta con <strong>escritura atómica segura</strong> (protegida contra apagones y reinicios repentinos) y respaldos automáticos cada 24 horas.
+            </p>
+            <div class="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2 text-xs text-slate-300">
+              <div class="flex items-center gap-2 text-emerald-400 font-semibold">
+                <i class="fa-solid fa-shield-check"></i> Protección de Integridad Atómica: ACTIVA
+              </div>
+              <div class="flex items-center gap-2 text-brand-400 font-semibold">
+                <i class="fa-solid fa-clock-rotate-left"></i> Respaldos Diarios Automáticos: ACTIVOS (data/backups/)
+              </div>
+            </div>
+          </div>
+
+          <div class="pt-4 border-t border-slate-800 space-y-2.5">
+            <span class="text-xs text-slate-400 block font-medium">Descarga Inmediata:</span>
+            <div class="flex flex-col sm:flex-row gap-2.5">
+              <a id="btnDownloadBackup" href="#" download class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-medium text-xs rounded-xl transition shadow-lg shadow-brand-600/20 text-center">
+                <i class="fa-solid fa-download"></i>
+                <span>Descargar Backup JSON (Este Servidor)</span>
+              </a>
+              ${user.isMasterOwner ? `
+              <a href="/api/backup/all" download class="flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs rounded-xl transition shadow-lg shadow-amber-600/20 text-center">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span>Backup Maestro (Global)</span>
+              </a>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ── TAB 7: ADMINISTRADORES DEL BOT ── -->
@@ -621,6 +709,12 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
         <div>
           <label class="block text-xs font-medium text-slate-400 mb-1 uppercase tracking-wider">Días a Añadir</label>
           <input type="number" id="modal_reseller_days" value="30" min="1" max="365" required class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1 uppercase tracking-wider">Límite Diario de Claves (0 = Sin Límite)</label>
+          <input type="number" id="modal_reseller_limit" value="0" min="0" max="5000" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500" placeholder="Ej: 15 (dejar en 0 para ilimitado)">
+          <span class="text-[11px] text-slate-500 mt-1 block">Número máximo de keys que el revendedor puede crear al día.</span>
         </div>
 
         <div>
@@ -783,7 +877,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
         allResellersCache = list;
 
         if (list.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-slate-500">No hay revendedores registrados en este servidor. Haz clic en "Asignar Revendedor".</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-500">No hay revendedores registrados en este servidor. Haz clic en "Asignar Revendedor".</td></tr>';
           return;
         }
 
@@ -792,6 +886,10 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
           const statusBadge = isExp 
             ? '<span class="px-2 py-0.5 text-xs rounded-md bg-red-500/10 text-red-400 border border-red-500/20 font-medium">Expirado (0d)</span>'
             : \`<span class="px-2 py-0.5 text-xs rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">\${r.daysLeft} días restantes</span>\`;
+
+          const quotaBadge = (r.dailyLimit && r.dailyLimit > 0)
+            ? \`<span class="px-2 py-0.5 text-xs rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono font-medium">\${r.usedToday || 0} / \${r.dailyLimit} hoy</span>\`
+            : '<span class="text-slate-500 text-xs">Sin límite</span>';
 
           const platBadges = (r.allowedProviders || []).map(p => \`<span class="px-1.5 py-0.5 text-[10px] rounded bg-slate-800 text-slate-300 font-mono">\${p}</span>\`).join(' ');
 
@@ -812,6 +910,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
                 </div>
               </td>
               <td class="py-3 px-4">\${statusBadge}</td>
+              <td class="py-3 px-4 font-sans">\${quotaBadge}</td>
               <td class="py-3 px-4">\${platBadges || '<span class="text-slate-600 text-xs">Ninguna</span>'}</td>
               <td class="py-3 px-4 text-slate-400 text-xs font-sans">\${r.addedBy || 'Admin'}</td>
               <td class="py-3 px-4 text-right space-x-1">
@@ -826,7 +925,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
           \`;
         }).join('');
       } catch (err) {
-        tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-red-400">Error al cargar revendedores.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-red-400">Error al cargar revendedores.</td></tr>';
       }
     }
 
@@ -836,6 +935,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
       document.getElementById('modal_reseller_user').value = '';
       document.getElementById('modal_reseller_user').readOnly = false;
       document.getElementById('modal_reseller_days').value = '30';
+      document.getElementById('modal_reseller_limit').value = '0';
       document.getElementById('check_plat_all').checked = true;
       toggleAllPlatforms(document.getElementById('check_plat_all'));
       document.getElementById('modalReseller').classList.remove('hidden');
@@ -848,6 +948,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
       document.getElementById('modal_reseller_user').value = userId;
       document.getElementById('modal_reseller_user').readOnly = true;
       document.getElementById('modal_reseller_days').value = r.daysLeft > 0 ? r.daysLeft : 30;
+      document.getElementById('modal_reseller_limit').value = r.dailyLimit || 0;
       
       document.querySelectorAll('.plat-checkbox').forEach(cb => {
         cb.checked = (r.allowedProviders || []).includes(cb.value);
@@ -871,6 +972,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
       const rawUser = document.getElementById('modal_reseller_user').value.trim();
       const userId = rawUser.replace(/[^0-9]/g, '');
       const days = parseInt(document.getElementById('modal_reseller_days').value, 10);
+      const dailyLimit = parseInt(document.getElementById('modal_reseller_limit').value || '0', 10);
       
       const platforms = [];
       document.querySelectorAll('.plat-checkbox:checked').forEach(cb => {
@@ -886,7 +988,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
         const res = await fetch(\`/api/guilds/\${currentGuildId}/resellers\`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, days, platforms })
+          body: JSON.stringify({ userId, days, platforms, dailyLimit })
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
@@ -1056,18 +1158,80 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
     }
 
     function filterKeysTable() {
-      const q = document.getElementById('searchKeysInput').value.toLowerCase().trim();
-      if (!q) {
-        renderKeysTable(allKeysCache);
+      const q = (document.getElementById('searchKeysInput')?.value || '').toLowerCase().trim();
+      const selectedPlat = (document.getElementById('filterKeysPlatform')?.value || '').toLowerCase().trim();
+
+      let filtered = allKeysCache;
+
+      if (selectedPlat) {
+        filtered = filtered.filter(k => (k.providerId || '').toLowerCase() === selectedPlat);
+      }
+
+      if (q) {
+        filtered = filtered.filter(k => 
+          (k.key || '').toLowerCase().includes(q) ||
+          (k.userId || '').toLowerCase().includes(q) ||
+          (k.providerId || '').toLowerCase().includes(q) ||
+          (k.note || '').toLowerCase().includes(q)
+        );
+      }
+
+      renderKeysTable(filtered);
+    }
+
+    function exportKeysToCSV() {
+      if (!allKeysCache || allKeysCache.length === 0) {
+        alert('No hay licencias para exportar.');
         return;
       }
-      const filtered = allKeysCache.filter(k => 
-        (k.key || '').toLowerCase().includes(q) ||
-        (k.userId || '').toLowerCase().includes(q) ||
-        (k.providerId || '').toLowerCase().includes(q) ||
-        (k.note || '').toLowerCase().includes(q)
-      );
-      renderKeysTable(filtered);
+
+      const q = (document.getElementById('searchKeysInput')?.value || '').toLowerCase().trim();
+      const selectedPlat = (document.getElementById('filterKeysPlatform')?.value || '').toLowerCase().trim();
+
+      let listToExport = allKeysCache;
+      if (selectedPlat) {
+        listToExport = listToExport.filter(k => (k.providerId || '').toLowerCase() === selectedPlat);
+      }
+      if (q) {
+        listToExport = listToExport.filter(k => 
+          (k.key || '').toLowerCase().includes(q) ||
+          (k.userId || '').toLowerCase().includes(q) ||
+          (k.providerId || '').toLowerCase().includes(q) ||
+          (k.note || '').toLowerCase().includes(q)
+        );
+      }
+
+      const headers = ['Fecha de Creación', 'ID de Revendedor', 'Plataforma', 'Clave / Cuenta', 'Duración (Días)', 'Prefijo', 'Nota / Cliente'];
+      
+      const escapeCSV = (val) => {
+        if (val === null || val === undefined) return '""';
+        const str = String(val).replace(/"/g, '""');
+        return '"' + str + '"';
+      };
+
+      const rows = listToExport.map(k => [
+        escapeCSV(new Date(k.createdAt).toLocaleString('es-ES')),
+        escapeCSV(k.userId || 'Sistema'),
+        escapeCSV(k.providerId || ''),
+        escapeCSV(k.key || ''),
+        escapeCSV(k.days || 30),
+        escapeCSV(k.prefix || ''),
+        escapeCSV(k.note || 'Sin nota')
+      ].join(';'));
+
+      // Inclusión de BOM UTF-8 (\uFEFF) para compatibilidad total con Excel en español
+      const csvContent = '\uFEFF' + [headers.map(escapeCSV).join(';'), ...rows].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      link.setAttribute('href', url);
+      link.setAttribute('download', 'historial_licencias_' + currentGuildId + '_' + dateStr + '.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast('Exportadas ' + listToExport.length + ' licencias a archivo CSV (Excel).');
     }
 
     async function resetHwidDirect(providerId, key) {
@@ -1168,8 +1332,63 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
         document.getElementById('cfg_bypass_password').value = prov.bypass?.password || '';
         document.getElementById('cfg_mycheats_username').value = prov.mycheats?.username || '';
         document.getElementById('cfg_mycheats_password').value = prov.mycheats?.password || '';
+
+        // Plantilla de Entrega Personalizable
+        const tmpl = cfg.customTemplate || {};
+        document.getElementById('cfg_template_storeName').value = tmpl.storeName || '';
+        document.getElementById('cfg_template_noteText').value = tmpl.noteText || 'Válida para 1 solo dispositivo.';
+        document.getElementById('cfg_template_footerText').value = tmpl.footerText || '';
+        updateTemplatePreview();
+
+        // Enlace de descarga de Backup
+        const btnBackup = document.getElementById('btnDownloadBackup');
+        if (btnBackup) {
+          btnBackup.href = '/api/guilds/' + currentGuildId + '/backup';
+        }
       } catch (err) {
         console.error('Error al cargar config:', err);
+      }
+    }
+
+    function updateTemplatePreview() {
+      const store = document.getElementById('cfg_template_storeName')?.value.trim();
+      const note = document.getElementById('cfg_template_noteText')?.value.trim() || 'Válida para 1 solo dispositivo.';
+      const footer = document.getElementById('cfg_template_footerText')?.value.trim();
+
+      const storeHeader = store ? ('⭐ ' + store.toUpperCase() + ' ⭐\n') : '';
+      const footerPart = footer ? ('\n💬 ' + footer) : '';
+
+      const preview =
+        storeHeader +
+        '🔑 Clave: Tryhard-3BxbSVFBhxP\n' +
+        '⏳ Duración: 30 Días\n' +
+        '📱 Plataforma: KeyAuth (Elite Pro)\n' +
+        '⚠️ Nota: ' + note +
+        footerPart;
+
+      const box = document.getElementById('templatePreviewBox');
+      if (box) box.innerText = preview;
+    }
+
+    async function saveCustomTemplate(e) {
+      e.preventDefault();
+      const customTemplate = {
+        storeName: document.getElementById('cfg_template_storeName').value.trim(),
+        noteText: document.getElementById('cfg_template_noteText').value.trim(),
+        footerText: document.getElementById('cfg_template_footerText').value.trim(),
+      };
+
+      try {
+        const res = await fetch('/api/guilds/' + currentGuildId + '/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customTemplate })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        showToast('Plantilla de entrega guardada correctamente.');
+      } catch (err) {
+        showToast(err.message, 'error');
       }
     }
 

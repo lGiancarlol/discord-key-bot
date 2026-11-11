@@ -4,7 +4,10 @@ const config = require('./config');
 
 const DB_DIR = path.join(__dirname, '..', 'data');
 const GUILDS_DIR = path.join(DB_DIR, 'guilds');
+const BACKUPS_DIR = path.join(DB_DIR, 'backups');
 const OLD_DB_FILE = path.join(DB_DIR, 'db.json');
+
+const getTodayKey = () => new Date().toISOString().slice(0, 10);
 
 const createDefaultGuildData = (guildId, guildName = '') => ({
   guildId,
@@ -14,6 +17,11 @@ const createDefaultGuildData = (guildId, guildName = '') => ({
     adminPanelChannelId: (guildId === config.discord.guildId ? config.discord.adminPanelChannelId : '') || '',
     logsChannelId: (guildId === config.discord.guildId ? config.discord.logsChannelId : '') || '',
     voiceChannelId: (guildId === config.discord.guildId ? config.discord.voiceChannelId : '') || '',
+  },
+  customTemplate: {
+    storeName: 'Auth Cloud Gateway',
+    noteText: 'Válida para 1 solo dispositivo.',
+    footerText: '',
   },
   providersConfig: {
     bypass: {
@@ -57,6 +65,7 @@ class Database {
   constructor() {
     this.guilds = {};
     this.primaryGuildId = config.discord.guildId || 'default';
+    this.floodMap = new Map(); // Anti-Flood Map: `${guildId}:${userId}` -> { timestamps: number[], cooldownUntil: number }
     this.init();
   }
 
@@ -71,6 +80,9 @@ class Database {
     }
     if (!fs.existsSync(GUILDS_DIR)) {
       fs.mkdirSync(GUILDS_DIR, { recursive: true });
+    }
+    if (!fs.existsSync(BACKUPS_DIR)) {
+      fs.mkdirSync(BACKUPS_DIR, { recursive: true });
     }
 
     // 1. Migración de archivo db.json previo a la guild principal
@@ -87,7 +99,7 @@ class Database {
           resellers: parsed.resellers || {},
           generatedKeys: parsed.generatedKeys || [],
         };
-        fs.writeFileSync(primaryFile, JSON.stringify(migrated, null, 2), 'utf-8');
+        this.atomicWriteFile(primaryFile, JSON.stringify(migrated, null, 2));
         console.log(`[Database] ✅ Migración multi-servidor completada para guild: ${this.primaryGuildId}`);
       } catch (err) {
         console.error('[Database] Error al migrar db.json previo:', err);
@@ -99,6 +111,15 @@ class Database {
 
     // Asegurar que la guild principal siempre esté cargada
     this.ensureGuild(this.primaryGuildId);
+
+    // 3. Iniciar rutina de respaldos automáticos
+    this.setupAutoBackups();
+  }
+
+  atomicWriteFile(filePath, content) {
+    const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp`;
+    fs.writeFileSync(tempPath, content, 'utf-8');
+    fs.renameSync(tempPath, filePath);
   }
 
   loadAllGuilds() {
@@ -114,6 +135,7 @@ class Database {
               ...createDefaultGuildData(guildId),
               ...parsed,
               channels: { ...createDefaultGuildData(guildId).channels, ...(parsed.channels || {}) },
+              customTemplate: { ...createDefaultGuildData(guildId).customTemplate, ...(parsed.customTemplate || {}) },
               providersConfig: { ...createDefaultGuildData(guildId).providersConfig, ...(parsed.providersConfig || {}) },
               keyStock: { ...createDefaultGuildData(guildId).keyStock, ...(parsed.keyStock || {}) },
               resellers: parsed.resellers || {},
@@ -161,7 +183,7 @@ class Database {
     if (!this.guilds[gId]) return;
     try {
       const filePath = path.join(GUILDS_DIR, `${gId}.json`);
-      fs.writeFileSync(filePath, JSON.stringify(this.guilds[gId], null, 2), 'utf-8');
+      this.atomicWriteFile(filePath, JSON.stringify(this.guilds[gId], null, 2));
     } catch (err) {
       console.error(`[Database] Error al guardar datos de guild ${gId}:`, err);
     }
@@ -170,6 +192,77 @@ class Database {
   // Compatibilidad con llamada save() directa
   save(guildId) {
     this.saveGuild(guildId || this.primaryGuildId);
+  }
+
+  // ── SISTEMA DE RESPALDOS AUTOMÁTICOS (BACKUPS) ──
+
+  createBackup() {
+    try {
+      if (!fs.existsSync(BACKUPS_DIR)) {
+        fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupPath = path.join(BACKUPS_DIR, `backup-${timestamp}.json`);
+      const payload = {
+        createdAt: new Date().toISOString(),
+        version: '2.0',
+        guildsCount: Object.keys(this.guilds).length,
+        guilds: this.guilds,
+      };
+
+      this.atomicWriteFile(backupPath, JSON.stringify(payload, null, 2));
+      console.log(`[Backup] 💾 Respaldo automático creado: backup-${timestamp}.json`);
+
+      // Mantener únicamente los últimos 10 respaldos
+      this.pruneOldBackups(10);
+      return backupPath;
+    } catch (err) {
+      console.error('[Backup] Error al crear respaldo automático:', err);
+      return null;
+    }
+  }
+
+  pruneOldBackups(keepCount = 10) {
+    try {
+      const files = fs.readdirSync(BACKUPS_DIR)
+        .filter((f) => f.startsWith('backup-') && f.endsWith('.json'))
+        .map((f) => ({
+          name: f,
+          time: fs.statSync(path.join(BACKUPS_DIR, f)).mtimeMs,
+        }))
+        .sort((a, b) => b.time - a.time);
+
+      if (files.length > keepCount) {
+        for (let i = keepCount; i < files.length; i++) {
+          try {
+            fs.unlinkSync(path.join(BACKUPS_DIR, files[i].name));
+          } catch (_) {}
+        }
+      }
+    } catch (err) {
+      console.error('[Backup] Error al purgar respaldos antiguos:', err);
+    }
+  }
+
+  setupAutoBackups() {
+    // 1. Respaldo al iniciar si no hay ninguno en las últimas 24h
+    try {
+      const files = fs.readdirSync(BACKUPS_DIR).filter((f) => f.startsWith('backup-') && f.endsWith('.json'));
+      if (files.length === 0) {
+        this.createBackup();
+      }
+    } catch (_) {
+      this.createBackup();
+    }
+
+    // 2. Programar intervalo cada 24 horas
+    if (!this._backupInterval) {
+      this._backupInterval = setInterval(() => {
+        this.createBackup();
+      }, 24 * 60 * 60 * 1000);
+      if (this._backupInterval.unref) this._backupInterval.unref();
+    }
   }
 
   getGuildList() {
@@ -187,6 +280,11 @@ class Database {
       guildId: gData.guildId,
       name: gData.name,
       channels: gData.channels || {},
+      customTemplate: gData.customTemplate || {
+        storeName: 'Auth Cloud Gateway',
+        noteText: 'Válida para 1 solo dispositivo.',
+        footerText: '',
+      },
       providersConfig: gData.providersConfig || {},
     };
   }
@@ -196,6 +294,9 @@ class Database {
     if (newConfig.name) gData.name = newConfig.name;
     if (newConfig.channels) {
       gData.channels = { ...gData.channels, ...newConfig.channels };
+    }
+    if (newConfig.customTemplate) {
+      gData.customTemplate = { ...(gData.customTemplate || {}), ...newConfig.customTemplate };
     }
     if (newConfig.providersConfig) {
       gData.providersConfig = { ...gData.providersConfig, ...newConfig.providersConfig };
@@ -237,7 +338,7 @@ class Database {
     return gData.botAdmins || [];
   }
 
-  // ── GESTIÓN DE REVENDEDORES POR TIEMPO (POR GUILD) ──
+  // ── GESTIÓN DE REVENDEDORES POR TIEMPO Y CUOTAS DIARIAS (POR GUILD) ──
 
   getReseller(userId, guildId) {
     const gData = this.getGuildData(guildId);
@@ -249,6 +350,10 @@ class Database {
     const isExpired = now >= expiresTime;
     const diffMs = Math.max(0, expiresTime - now);
     const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    const today = getTodayKey();
+    const usedToday = (r.dailyUsage && r.dailyUsage[today]) ? Number(r.dailyUsage[today]) : 0;
+    const dailyLimit = r.dailyLimit ? Number(r.dailyLimit) : 0;
+    const remainingToday = dailyLimit > 0 ? Math.max(0, dailyLimit - usedToday) : null;
 
     return {
       userId,
@@ -257,14 +362,25 @@ class Database {
       daysLeft,
       allowedProviders: r.allowedProviders || [],
       maxDays: r.maxDays || 30,
+      dailyLimit,
+      usedToday,
+      remainingToday,
       createdAt: r.createdAt,
       addedBy: r.addedBy || 'Admin',
     };
   }
 
-  setReseller(userId, days, allowedProviders = [], addedBy = 'Admin', guildId) {
-    const gData = this.getGuildData(guildId);
-    const current = this.getReseller(userId, guildId);
+  setReseller(userId, days, allowedProviders = [], addedBy = 'Admin', dailyLimit = 0, guildId) {
+    // Si guildId vino en el argumento dailyLimit por sobrecarga
+    let actualGuildId = guildId;
+    let actualLimit = Number(dailyLimit) || 0;
+    if (typeof dailyLimit === 'string' && dailyLimit.length > 10 && !guildId) {
+      actualGuildId = dailyLimit;
+      actualLimit = 0;
+    }
+
+    const gData = this.getGuildData(actualGuildId);
+    const current = this.getReseller(userId, actualGuildId);
     let newExpiresTime;
 
     if (current && !current.isExpired) {
@@ -279,13 +395,15 @@ class Database {
         ? allowedProviders 
         : ['bypass', 'bypass_uid', 'mycheats', 'keyauth'],
       maxDays: 30,
+      dailyLimit: actualLimit > 0 ? actualLimit : 0,
+      dailyUsage: current && gData.resellers[userId]?.dailyUsage ? gData.resellers[userId].dailyUsage : {},
       createdAt: current ? current.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       addedBy,
     };
 
-    this.saveGuild(guildId);
-    return this.getReseller(userId, guildId);
+    this.saveGuild(actualGuildId);
+    return this.getReseller(userId, actualGuildId);
   }
 
   removeReseller(userId, guildId) {
@@ -301,6 +419,159 @@ class Database {
   getAllResellers(guildId) {
     const gData = this.getGuildData(guildId);
     return Object.keys(gData.resellers).map((id) => this.getReseller(id, guildId));
+  }
+
+  // ── CUOTA DIARIA DE GENERACIÓN DE CLAVES ──
+
+  checkResellerQuota(userId, countToGenerate = 1, guildId) {
+    const gId = guildId || this.primaryGuildId;
+    // Admins no tienen límite diario
+    if (this.isBotAdmin(userId, gId) || userId === config.discord.ownerId) {
+      return { allowed: true, quotaExceeded: false, dailyLimit: 0, usedToday: 0 };
+    }
+
+    const reseller = this.getReseller(userId, gId);
+    if (!reseller) {
+      return { allowed: false, quotaExceeded: false, error: 'No es revendedor registrado.' };
+    }
+
+    if (!reseller.dailyLimit || reseller.dailyLimit <= 0) {
+      return { allowed: true, quotaExceeded: false, dailyLimit: 0, usedToday: reseller.usedToday };
+    }
+
+    if (reseller.usedToday + Number(countToGenerate) > reseller.dailyLimit) {
+      return {
+        allowed: false,
+        quotaExceeded: true,
+        dailyLimit: reseller.dailyLimit,
+        usedToday: reseller.usedToday,
+        remainingToday: Math.max(0, reseller.dailyLimit - reseller.usedToday),
+      };
+    }
+
+    return {
+      allowed: true,
+      quotaExceeded: false,
+      dailyLimit: reseller.dailyLimit,
+      usedToday: reseller.usedToday,
+      remainingToday: reseller.dailyLimit - reseller.usedToday - countToGenerate,
+    };
+  }
+
+  incrementResellerUsage(userId, count = 1, guildId) {
+    const gId = guildId || this.primaryGuildId;
+    const gData = this.getGuildData(gId);
+    const r = gData.resellers[userId];
+    if (!r) return;
+
+    if (!r.dailyUsage) r.dailyUsage = {};
+    const today = getTodayKey();
+    r.dailyUsage[today] = (Number(r.dailyUsage[today]) || 0) + Number(count);
+
+    // Limpiar fechas antiguas (mantener solo los últimos 7 días)
+    const keys = Object.keys(r.dailyUsage);
+    if (keys.length > 7) {
+      keys.sort();
+      while (keys.length > 7) {
+        delete r.dailyUsage[keys.shift()];
+      }
+    }
+
+    this.saveGuild(gId);
+  }
+
+  // ── SISTEMA ANTI-FLOOD / ANTI-SPAM (BURST RATE LIMITER) ──
+
+  checkAntiFlood(userId, guildId) {
+    const gId = guildId || this.primaryGuildId;
+    // Admins y Dueño no están sujetos a Anti-Flood
+    if (this.isBotAdmin(userId, gId) || userId === config.discord.ownerId) {
+      return { allowed: true };
+    }
+
+    const key = `${gId}:${userId}`;
+    const now = Date.now();
+    let record = this.floodMap.get(key);
+
+    if (!record) {
+      record = { timestamps: [], cooldownUntil: 0 };
+      this.floodMap.set(key, record);
+    }
+
+    // 1. Si está en enfriamiento (cooldown)
+    if (record.cooldownUntil && now < record.cooldownUntil) {
+      const remainingSeconds = Math.ceil((record.cooldownUntil - now) / 1000);
+      const remainingMinutes = Math.ceil(remainingSeconds / 60);
+      return {
+        allowed: false,
+        onCooldown: true,
+        remainingSeconds,
+        remainingMinutes,
+      };
+    }
+
+    // 2. Limpiar timestamps más antiguos que 2 minutos (120,000 ms)
+    record.timestamps = record.timestamps.filter((ts) => now - ts < 120000);
+
+    // 3. Si ha superado el umbral (>= 3 intentos en menos de 2 minutos)
+    if (record.timestamps.length >= 3) {
+      record.cooldownUntil = now + 10 * 60 * 1000; // 10 minutos de enfriamiento
+      record.timestamps = []; // resetear ráfaga
+      return {
+        allowed: false,
+        triggeredCooldown: true,
+        cooldownMinutes: 10,
+      };
+    }
+
+    return { allowed: true };
+  }
+
+  recordKeyBurst(userId, guildId) {
+    const gId = guildId || this.primaryGuildId;
+    const key = `${gId}:${userId}`;
+    let record = this.floodMap.get(key);
+    if (!record) {
+      record = { timestamps: [], cooldownUntil: 0 };
+      this.floodMap.set(key, record);
+    }
+    record.timestamps.push(Date.now());
+  }
+
+  // ── FORMATO DE PLANTILLA DE ENTREGA PERSONALIZABLE ──
+
+  formatForwardTemplate({ providerName, keyOrUser, days, isAccount = false, guildId = null }) {
+    const gData = this.getGuildData(guildId);
+    const tmpl = gData.customTemplate || {};
+    const storeName = tmpl.storeName ? `⭐ ${tmpl.storeName.toUpperCase()} ⭐\n` : '';
+    const noteText = tmpl.noteText || 'Válida para 1 solo dispositivo.';
+    const footerText = tmpl.footerText ? `\n💬 ${tmpl.footerText}` : '';
+
+    if (isAccount) {
+      const [uname, pass] = String(keyOrUser).includes(':') ? String(keyOrUser).split(':') : [keyOrUser, '1'];
+      return (
+        '```text\n' +
+        storeName +
+        `👤 Usuario: ${uname}\n` +
+        `🔑 Contraseña: ${pass}\n` +
+        `⏳ Duración: ${days} Días\n` +
+        `📱 Plataforma: ${providerName}\n` +
+        `⚠️ Nota: ${noteText}` +
+        footerText +
+        '\n```'
+      );
+    }
+
+    return (
+      '```text\n' +
+      storeName +
+      `🔑 Clave: ${keyOrUser}\n` +
+      `⏳ Duración: ${days} Días\n` +
+      `📱 Plataforma: ${providerName}\n` +
+      `⚠️ Nota: ${noteText}` +
+      footerText +
+      '\n```'
+    );
   }
 
   // Permisos efectivos de un miembro en una guild
@@ -322,6 +593,9 @@ class Database {
         expiresAt: reseller.expiresAt,
         allowedProviders: reseller.isExpired ? [] : reseller.allowedProviders,
         maxDays: reseller.maxDays,
+        dailyLimit: reseller.dailyLimit || 0,
+        usedToday: reseller.usedToday || 0,
+        remainingToday: reseller.remainingToday,
       };
     }
 
@@ -334,6 +608,9 @@ class Database {
         daysLeft: 9999,
         allowedProviders: Object.keys(appConfig.providers),
         maxDays: 90,
+        dailyLimit: 0,
+        usedToday: 0,
+        remainingToday: null,
       };
     }
 
@@ -345,6 +622,9 @@ class Database {
       daysLeft: 0,
       allowedProviders: [],
       maxDays: 0,
+      dailyLimit: 0,
+      usedToday: 0,
+      remainingToday: 0,
     };
   }
 
@@ -540,10 +820,15 @@ class Database {
       isBotAdmin: (userId) => this.isBotAdmin(userId, gId),
       getBotAdmins: () => this.getBotAdmins(gId),
       getReseller: (userId) => this.getReseller(userId, gId),
-      setReseller: (userId, days, allowedProviders, addedBy) => this.setReseller(userId, days, allowedProviders, addedBy, gId),
+      setReseller: (userId, days, allowedProviders, addedBy, dailyLimit) => this.setReseller(userId, days, allowedProviders, addedBy, dailyLimit, gId),
       removeReseller: (userId) => this.removeReseller(userId, gId),
       getAllResellers: () => this.getAllResellers(gId),
       getUserPermissions: (member, cfg) => this.getUserPermissions(member, cfg, gId),
+      checkResellerQuota: (userId, count) => this.checkResellerQuota(userId, count, gId),
+      incrementResellerUsage: (userId, count) => this.incrementResellerUsage(userId, count, gId),
+      checkAntiFlood: (userId) => this.checkAntiFlood(userId, gId),
+      recordKeyBurst: (userId) => this.recordKeyBurst(userId, gId),
+      formatForwardTemplate: (params) => this.formatForwardTemplate({ ...params, guildId: gId }),
       addStock: (providerId, keysArray, days) => this.addStock(providerId, keysArray, days, gId),
       popStock: (providerId, targetDays) => this.popStock(providerId, targetDays, gId),
       getStock: (providerId) => this.getStock(providerId, gId),

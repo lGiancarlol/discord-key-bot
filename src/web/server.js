@@ -18,26 +18,35 @@ const { renderLoginPage } = require('./views/login');
 const { renderServersPage } = require('./views/servers');
 const { renderDashboardPage } = require('./views/dashboard');
 
-function getForwardTemplate({ providerName, keyOrUser, days, isAccount }) {
-  if (isAccount) {
-    return (
-      '```text\n' +
-      `👤 Usuario: ${keyOrUser}\n` +
-      `⏳ Duración: ${days} Días\n` +
-      `📱 Plataforma: ${providerName}\n` +
-      '⚠️ Nota: Válida para 1 solo dispositivo.\n' +
-      '```'
-    );
-  }
+// In-Memory Rate Limiter Middleware
+function createRateLimiter({ windowMs = 60000, max = 60, message = 'Demasiadas solicitudes. Por favor espera un momento.' }) {
+  const hits = new Map();
+  const cleanup = setInterval(() => {
+    const now = Date.now();
+    for (const [key, record] of hits.entries()) {
+      if (now > record.resetTime) {
+        hits.delete(key);
+      }
+    }
+  }, 5 * 60 * 1000);
+  if (cleanup.unref) cleanup.unref();
 
-  return (
-    '```text\n' +
-    `🔑 Clave: ${keyOrUser}\n` +
-    `⏳ Duración: ${days} Días\n` +
-    `📱 Plataforma: ${providerName}\n` +
-    '⚠️ Nota: Válida para 1 solo dispositivo.\n' +
-    '```'
-  );
+  return (req, res, next) => {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+    const now = Date.now();
+    let record = hits.get(ip);
+    if (!record || now > record.resetTime) {
+      record = { count: 1, resetTime: now + windowMs };
+      hits.set(ip, record);
+      return next();
+    }
+    record.count++;
+    if (record.count > max) {
+      res.setHeader('Retry-After', Math.ceil((record.resetTime - now) / 1000));
+      return res.status(429).json({ error: message, retryAfterSeconds: Math.ceil((record.resetTime - now) / 1000) });
+    }
+    next();
+  };
 }
 
 // Enviar log administrativo al canal configurado de una guild
@@ -61,6 +70,15 @@ function createWebServer(client) {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
+
+  // Rate Limiting Global y Específico
+  const apiLimiter = createRateLimiter({ windowMs: 60000, max: 120, message: 'Demasiadas solicitudes a la API. Por favor espera un momento.' });
+  const authLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 30, message: 'Demasiados intentos de acceso. Por favor espera unos minutos.' });
+  const keyGenLimiter = createRateLimiter({ windowMs: 60000, max: 20, message: 'Ritmo excesivo de generación de licencias. Espera unos segundos.' });
+
+  app.use('/api/', apiLimiter);
+  app.use('/login', authLimiter);
+  app.use('/auth/', authLimiter);
 
   // ── RUTAS DE AUTENTICACIÓN ──
 
@@ -238,7 +256,7 @@ function createWebServer(client) {
 
   // 3. Crear / Asignar Revendedor
   app.post('/api/guilds/:guildId/resellers', requireAuth, requireGuildAccess(client, db), async (req, res) => {
-    const { userId, days, platforms } = req.body;
+    const { userId, days, platforms, dailyLimit } = req.body;
     if (!userId || !days) {
       return res.status(400).json({ error: 'Faltan parámetros requeridos (userId, days).' });
     }
@@ -249,8 +267,9 @@ function createWebServer(client) {
       return res.status(400).json({ error: 'Días inválidos.' });
     }
 
+    const limitNum = dailyLimit !== undefined && dailyLimit !== null && dailyLimit !== '' ? parseInt(dailyLimit, 10) : 0;
     const addedBy = req.user.username || 'Panel Web';
-    const result = req.guildDb.setReseller(cleanUser, numDays, platforms, addedBy);
+    const result = req.guildDb.setReseller(cleanUser, numDays, platforms, addedBy, limitNum);
 
     // Auditoría
     const opTag = req.user.username || 'Web Admin';
@@ -266,6 +285,7 @@ function createWebServer(client) {
           { name: 'Revendedor Asignado', value: `<@${cleanUser}>`, inline: true },
           { name: 'Tiempo Otorgado', value: `+${numDays} días`, inline: true },
           { name: 'Días Restantes', value: `${result.daysLeft} días`, inline: true },
+          { name: 'Límite Diario', value: limitNum > 0 ? `${limitNum} keys/día` : 'Sin límite (Ilimitado)', inline: true },
           { name: 'Plataformas', value: result.allowedProviders.join(', '), inline: false }
         )
         .setFooter({ text: 'Sistema de Auditoría • Auth Gateway Web' })
@@ -370,6 +390,41 @@ function createWebServer(client) {
       return res.status(404).json({ error: 'Proveedor no disponible.' });
     }
 
+    // 1. Verificación de Anti-Flood (Burst Rate Limiter)
+    const floodCheck = req.guildDb.checkAntiFlood(req.user.id);
+    if (!floodCheck.allowed) {
+      if (floodCheck.triggeredCooldown) {
+        await logToGuildAdminChannel(
+          client,
+          guildId,
+          new EmbedBuilder()
+            .setColor(0xef4444)
+            .setTitle('🚨 [SEGURIDAD] Detección de Flood en Emisión Web')
+            .setDescription('Se ha detectado una ráfaga anormal de peticiones (>3 en menos de 2 minutos).')
+            .addFields(
+              { name: 'Operador Web', value: `${req.user.username} (<@${req.user.id}>)`, inline: true },
+              { name: 'Plataforma Solicitada', value: provider.name, inline: true },
+              { name: 'Medida Aplicada', value: 'Enfriamiento de 10 minutos activado automáticamente.', inline: false }
+            )
+            .setFooter({ text: 'Sistema de Seguridad Anti-Spam • Auth Gateway' })
+            .setTimestamp()
+        );
+        return res.status(429).json({ error: `🚨 Has superado el límite de emisión rápida (Anti-Flood). Tu cuenta ha entrado en enfriamiento por ${floodCheck.cooldownMinutes} minutos.` });
+      }
+      return res.status(429).json({ error: `⏳ Estás en enfriamiento por emisión rápida. Por favor espera ${floodCheck.remainingMinutes || 1} minuto(s).` });
+    }
+
+    // 2. Verificación de Cuota Diaria (Daily Quotas)
+    const quotaCheck = req.guildDb.checkResellerQuota(req.user.id, Number(count));
+    if (!quotaCheck.allowed) {
+      if (quotaCheck.quotaExceeded) {
+        return res.status(403).json({
+          error: `⛔ Has alcanzado tu límite diario de licencias (${quotaCheck.usedToday}/${quotaCheck.dailyLimit} claves usadas hoy). Intenta de nuevo mañana.`,
+        });
+      }
+      return res.status(403).json({ error: quotaCheck.error || 'No autorizado para emitir licencias.' });
+    }
+
     try {
       const items = await provider.createKey({
         days: Number(days),
@@ -377,6 +432,10 @@ function createWebServer(client) {
         prefix,
         note,
       });
+
+      // Registrar uso en Anti-Flood y Cuota Diaria
+      req.guildDb.recordKeyBurst(req.user.id);
+      req.guildDb.incrementResellerUsage(req.user.id, Number(count));
 
       // Registrar en la BD de este servidor
       for (const item of items) {
@@ -392,12 +451,12 @@ function createWebServer(client) {
         });
       }
 
-      // Generar plantilla de WhatsApp
+      // Generar plantilla de WhatsApp personalizada para este servidor
       const forwardText = items
         .map((item) => {
           const val = typeof item === 'object' ? (item.username ? `${item.username}:1` : item.key) : item;
           const itemDays = typeof item === 'object' && item.days ? item.days : days;
-          return getForwardTemplate({
+          return req.guildDb.formatForwardTemplate({
             providerName: provider.name,
             keyOrUser: val,
             days: itemDays,
@@ -520,10 +579,32 @@ function createWebServer(client) {
 
   // 12. Guardar Configuración de Servidor
   app.post('/api/guilds/:guildId/config', requireAuth, requireGuildAccess(client, db), (req, res) => {
-    const { channels, providersConfig } = req.body;
-    const updated = req.guildDb.updateConfig({ channels, providersConfig });
+    const { channels, customTemplate, providersConfig } = req.body;
+    const updated = req.guildDb.updateConfig({ channels, customTemplate, providersConfig });
     providerManager.invalidateGuild(req.params.guildId);
     res.json({ success: true, config: updated });
+  });
+
+  // 12b. Descargar Respaldo JSON de este Servidor (1-Click Backup)
+  app.get('/api/guilds/:guildId/backup', requireAuth, requireGuildAccess(client, db), (req, res) => {
+    const data = req.guildDb.getData();
+    const filename = `backup-servidor-${req.params.guildId}-${new Date().toISOString().slice(0, 10)}.json`;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(JSON.stringify(data, null, 2));
+  });
+
+  // 12c. Descargar Respaldo Maestro de Todo el Sistema (Solo Dueño Principal)
+  app.get('/api/backup/all', requireAuth, (req, res) => {
+    if (!req.session.user.isMasterOwner) {
+      return res.status(403).json({ error: 'Acceso restringido al Dueño Principal.' });
+    }
+    const backupFile = db.createBackup();
+    if (!backupFile) {
+      return res.status(500).json({ error: 'Error al generar el respaldo global.' });
+    }
+    const filename = `backup-master-${new Date().toISOString().slice(0, 10)}.json`;
+    res.download(backupFile, filename);
   });
 
   // 13. Publicar Panel de Licencias en Discord

@@ -173,9 +173,17 @@ function getAdminAssignResellerModal() {
     .setMaxLength(4)
     .setRequired(true);
 
+  const limitInput = new TextInputBuilder()
+    .setCustomId('input_admin_reseller_limit')
+    .setLabel('Límite Diario de Keys (0 = ilimitado)')
+    .setPlaceholder('Ej: 20 (opcional, vacío o 0 = ilimitado)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false);
+
   modal.addComponents(
     new ActionRowBuilder().addComponents(userInput),
-    new ActionRowBuilder().addComponents(daysInput)
+    new ActionRowBuilder().addComponents(daysInput),
+    new ActionRowBuilder().addComponents(limitInput)
   );
 
   return modal;

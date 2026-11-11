@@ -63,6 +63,12 @@ const commands = [
             .setDescription('Días de membresía (ej: 30)')
             .setRequired(true)
         )
+        .addIntegerOption((opt) =>
+          opt
+            .setName('limite_diario')
+            .setDescription('Límite máximo de keys por día (0 o vacío = sin límite)')
+            .setRequired(false)
+        )
         .addStringOption((opt) =>
           opt
             .setName('plataformas')

@@ -481,29 +481,9 @@ function extractUserId(input) {
   return match ? match[0] : null;
 }
 
-// Generador de plantilla "Listo para Reenviar" (WhatsApp / Telegram)
-function getForwardTemplate({ providerName, keyOrUser, days, isAccount = false }) {
-  if (isAccount) {
-    const [uname, pass] = keyOrUser.includes(':') ? keyOrUser.split(':') : [keyOrUser, '1'];
-    return (
-      '```text\n' +
-      `👤 Usuario: ${uname}\n` +
-      `🔑 Contraseña: ${pass}\n` +
-      `⏳ Duración: ${days} Días\n` +
-      `📱 Plataforma: ${providerName}\n` +
-      '⚠️ Nota: Válida para 1 solo dispositivo.\n' +
-      '```'
-    );
-  }
-
-  return (
-    '```text\n' +
-    `🔑 Clave: ${keyOrUser}\n` +
-    `⏳ Duración: ${days} Días\n` +
-    `📱 Plataforma: ${providerName}\n` +
-    '⚠️ Nota: Válida para 1 solo dispositivo.\n' +
-    '```'
-  );
+// Generador de plantilla "Listo para Reenviar" (WhatsApp / Telegram) con formato personalizable por servidor
+function getForwardTemplate({ providerName, keyOrUser, days, isAccount = false, guildId = null }) {
+  return db.formatForwardTemplate({ providerName, keyOrUser, days, isAccount, guildId });
 }
 
 // Manejo de Interacciones
@@ -645,6 +625,7 @@ client.on('interactionCreate', async (interaction) => {
         if (sub === 'asignar') {
           const target = interaction.options.getUser('usuario');
           const dias = interaction.options.getInteger('dias');
+          const limiteDiario = interaction.options.getInteger('limite_diario') || 0;
           const platInput = interaction.options.getString('plataformas') || 'all';
 
           let platforms = [];
@@ -661,7 +642,7 @@ client.on('interactionCreate', async (interaction) => {
             platforms = Object.keys(config.providers);
           }
 
-          const res = db.setReseller(target.id, dias, platforms, interaction.user.tag);
+          const res = db.setReseller(target.id, dias, platforms, interaction.user.tag, limiteDiario, interaction.guildId);
           const expDate = new Date(res.expiresAt).toLocaleDateString('es-ES', {
             day: '2-digit',
             month: 'short',
@@ -675,6 +656,7 @@ client.on('interactionCreate', async (interaction) => {
               `Se ha configurado la membresía para <@${target.id}>:\n\n` +
                 `⏳ **Tiempo otorgado:** +${dias} días\n` +
                 `📅 **Días restantes totales:** **${res.daysLeft} días** (Vence: \`${expDate}\`)\n` +
+                `🎯 **Límite diario:** ${limiteDiario > 0 ? `**${limiteDiario} keys/día**` : '**Sin límite (Ilimitado)**'}\n` +
                 `🌐 **Plataformas autorizadas:** \`${res.allowedProviders.join(', ')}\``
             )
             .setFooter({ text: 'Sistema de Revendedores • Auth Gateway' })
@@ -692,6 +674,7 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Revendedor Asignado', value: `<@${target.id}>`, inline: true },
                 { name: 'Tiempo Otorgado', value: `+${dias} días`, inline: true },
                 { name: 'Membresía Resultante', value: targetAudit.membership, inline: true },
+                { name: 'Límite Diario', value: limiteDiario > 0 ? `${limiteDiario} keys/día` : 'Sin límite', inline: true },
                 { name: 'Plataformas Autorizadas', value: res.allowedProviders.map((pid) => config.providers[pid]?.name || pid).join(', '), inline: false }
               )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
@@ -1474,6 +1457,7 @@ client.on('interactionCreate', async (interaction) => {
         const parts = customId.split('_');
         const targetId = parts[4];
         const dias = parseInt(parts[5], 10);
+        const limit = parts[6] ? parseInt(parts[6], 10) : 0;
 
         let platforms = [];
         if (values.includes('all')) {
@@ -1482,7 +1466,7 @@ client.on('interactionCreate', async (interaction) => {
           platforms = values;
         }
 
-        const res = db.setReseller(targetId, dias, platforms, user.tag);
+        const res = db.setReseller(targetId, dias, platforms, user.tag, limit, interaction.guildId);
         const expDate = new Date(res.expiresAt).toLocaleDateString('es-ES', {
           day: '2-digit',
           month: 'short',
@@ -1498,6 +1482,7 @@ client.on('interactionCreate', async (interaction) => {
             `• **Usuario:** <@${targetId}>\n` +
               `• **Tiempo asignado:** +${dias} días\n` +
               `• **Días totales restantes:** **${res.daysLeft} días** (Vence: \`${expDate}\`)\n` +
+              `• **Límite diario:** ${limit > 0 ? `**${limit} keys/día**` : '**Sin límite (Ilimitado)**'}\n` +
               `• **Plataformas autorizadas:**\n${platNames.map((n) => `  ☑️ **${n}**`).join('\n')}`
           )
           .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
@@ -1515,6 +1500,7 @@ client.on('interactionCreate', async (interaction) => {
               { name: 'Revendedor Asignado', value: `<@${targetId}>`, inline: true },
               { name: 'Tiempo Otorgado', value: `+${dias} días`, inline: true },
               { name: 'Membresía Resultante', value: targetAudit.membership, inline: true },
+              { name: 'Límite Diario', value: limit > 0 ? `${limit} keys/día` : 'Sin límite', inline: true },
               { name: 'Plataformas Autorizadas', value: platNames.join(', '), inline: false }
             )
             .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
@@ -1622,6 +1608,14 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
+        let limit = 0;
+        try {
+          limit = parseInt(interaction.fields.getTextInputValue('input_admin_reseller_limit') || '0', 10);
+          if (isNaN(limit) || limit < 0) limit = 0;
+        } catch {
+          limit = 0;
+        }
+
         const platformOptions = [
           {
             label: '🌟 TODAS LAS PLATAFORMAS (Acceso Total)',
@@ -1637,7 +1631,7 @@ client.on('interactionCreate', async (interaction) => {
 
         const selectRow = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
-            .setCustomId(`select_admin_assign_platforms_${targetId}_${dias}`)
+            .setCustomId(`select_admin_assign_platforms_${targetId}_${dias}_${limit}`)
             .setPlaceholder('Marca las casillas de las plataformas permitidas...')
             .setMinValues(1)
             .setMaxValues(platformOptions.length)
@@ -1933,6 +1927,51 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
+        // 1. Verificación Anti-Flood (Protección contra ráfagas aceleradas)
+        const floodCheck = db.forGuild(gId).checkAntiFlood(user.id);
+        if (!floodCheck.allowed) {
+          if (floodCheck.triggeredCooldown) {
+            await logToGuildAdminChannel(
+              interaction.guild,
+              new EmbedBuilder()
+                .setColor(0xef4444)
+                .setTitle('🚨 [SEGURIDAD] Detección de Flood en Discord')
+                .setDescription('Se ha detectado una ráfaga excesiva de emisión (>3 intentos en menos de 2 minutos).')
+                .addFields(
+                  { name: 'Usuario / Revendedor', value: `<@${user.id}> (${user.tag})`, inline: true },
+                  { name: 'Plataforma Solicitada', value: provider.name, inline: true },
+                  { name: 'Acción Aplicada', value: 'Enfriamiento temporal de 10 minutos activado automáticamente.', inline: false }
+                )
+                .setFooter({ text: 'Sistema de Seguridad Anti-Flood • Auth Gateway' })
+                .setTimestamp(),
+              gId
+            );
+            return interaction.reply({
+              content: `🚨 **ALERTA DE SEGURIDAD (Anti-Flood):** Has emitido solicitudes con demasiada rapidez. Se ha activado un enfriamiento temporal de **${floodCheck.cooldownMinutes} minutos** en tu cuenta.`,
+              ephemeral: true,
+            });
+          }
+          return interaction.reply({
+            content: `⏳ **Enfriamiento Activo:** Debes esperar **${floodCheck.remainingMinutes || 1} minuto(s)** antes de volver a emitir licencias.`,
+            ephemeral: true,
+          });
+        }
+
+        // 2. Verificación de Cuota Diaria (Daily Quotas)
+        const quotaCheck = db.forGuild(gId).checkResellerQuota(user.id, count);
+        if (!quotaCheck.allowed) {
+          if (quotaCheck.quotaExceeded) {
+            return interaction.reply({
+              content: `⛔ **Límite Diario Alcanzado:** Has alcanzado tu cuota de **${quotaCheck.dailyLimit} licencias por día** (usadas hoy: **${quotaCheck.usedToday}**). Podrás emitir más mañana.`,
+              ephemeral: true,
+            });
+          }
+          return interaction.reply({
+            content: `⛔ ${quotaCheck.error || 'No tienes permiso para emitir licencias.'}`,
+            ephemeral: true,
+          });
+        }
+
         await interaction.deferReply({ ephemeral: true });
 
         try {
@@ -1942,6 +1981,10 @@ client.on('interactionCreate', async (interaction) => {
             prefix: prefix || (providerId === 'mycheats' ? 'USER' : 'VIP'),
             note,
           });
+
+          // Registrar en Anti-Flood y Cuota Diaria
+          db.forGuild(gId).recordKeyBurst(user.id);
+          db.forGuild(gId).incrementResellerUsage(user.id, count);
 
           // Registrar en BD del servidor
           for (const item of items) {
@@ -1967,6 +2010,7 @@ client.on('interactionCreate', async (interaction) => {
                 keyOrUser: val,
                 days: itemDays,
                 isAccount: providerId === 'mycheats',
+                guildId: gId,
               });
             })
             .join('\n');
