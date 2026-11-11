@@ -618,8 +618,13 @@ function createWebServer(client) {
     res.json({ admins: adminList });
   });
 
-  // 16. Nombrar Administrador
+  // 16. Nombrar Administrador (Solo Dueño)
   app.post('/api/guilds/:guildId/admins', requireAuth, requireGuildAccess(client, db), async (req, res) => {
+    const isOwner = req.session.user.id === config.discord.ownerId || req.guild?.ownerId === req.session.user.id;
+    if (!isOwner) {
+      return res.status(403).json({ error: 'Solo el Dueño puede nombrar nuevos administradores.' });
+    }
+
     const { userId } = req.body;
     const { guildId } = req.params;
     const cleanUser = String(userId || '').replace(/[^0-9]/g, '');
@@ -651,8 +656,13 @@ function createWebServer(client) {
     res.json({ success: true, added });
   });
 
-  // 17. Revocar Administrador
+  // 17. Revocar Administrador (Solo Dueño)
   app.delete('/api/guilds/:guildId/admins/:userId', requireAuth, requireGuildAccess(client, db), async (req, res) => {
+    const isOwner = req.session.user.id === config.discord.ownerId || req.guild?.ownerId === req.session.user.id;
+    if (!isOwner) {
+      return res.status(403).json({ error: 'Solo el Dueño puede revocar administradores.' });
+    }
+
     const { userId, guildId } = req.params;
     const removed = req.guildDb.removeBotAdmin(userId);
 

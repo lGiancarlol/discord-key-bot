@@ -71,19 +71,12 @@ async function exchangeDiscordCode(code, redirectUri, client, db) {
   for (const [guildId, guild] of botGuilds.entries()) {
     const isServerOwner = guild.ownerId === user.id;
     const isBotAdmin = db?.forGuild(guildId)?.isBotAdmin(user.id);
-    const userDiscordGuild = rawGuilds.find((g) => g.id === guildId);
-    let isDiscordAdmin = false;
-    if (userDiscordGuild) {
-      if (userDiscordGuild.owner) isDiscordAdmin = true;
-      const perms = BigInt(userDiscordGuild.permissions || 0);
-      const ADMINISTRATOR = BigInt(0x8);
-      const MANAGE_GUILD = BigInt(0x20);
-      if ((perms & ADMINISTRATOR) === ADMINISTRATOR || (perms & MANAGE_GUILD) === MANAGE_GUILD) {
-        isDiscordAdmin = true;
-      }
-    }
 
-    if (isMasterOwner || isServerOwner || isBotAdmin || isDiscordAdmin) {
+    // Acceso estricto por servidor:
+    // 1. El Dueño Maestro siempre tiene acceso a todos los servidores
+    // 2. El Dueño de este servidor de Discord
+    // 3. Usuario explícitamente añadido como admin del bot EN ESTE SERVIDOR
+    if (isMasterOwner || isServerOwner || isBotAdmin) {
       authorizedGuilds.push({
         id: guild.id,
         name: guild.name,
@@ -179,12 +172,11 @@ function requireGuildAccess(client, db) {
       return next();
     }
 
-    // Verificar si el usuario es admin en este servidor de Discord
+    // Verificar si el usuario es admin en este servidor específico
     const isBotAdmin = db.forGuild(guildId).isBotAdmin(userId);
     const isOwner = client?.guilds.cache.get(guildId)?.ownerId === userId;
-    const isListed = session.authorizedGuilds?.some((g) => g.id === guildId);
 
-    if (!isBotAdmin && !isOwner && !isListed) {
+    if (!isBotAdmin && !isOwner) {
       if (req.path.startsWith('/api/')) {
         return res.status(403).json({ error: 'No tienes permisos de administrador en este servidor.' });
       }

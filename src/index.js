@@ -533,23 +533,34 @@ client.on('interactionCreate', async (interaction) => {
 
       // /admin (Gestión de Administradores del Bot)
       if (commandName === 'admin') {
+        const isOwner = interaction.user.id === config.discord.ownerId || interaction.guild?.ownerId === interaction.user.id;
+        if (!isOwner) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** Solo el Dueño del Bot puede nombrar o revocar administradores.',
+            ephemeral: true,
+          });
+        }
+
+        const gId = interaction.guildId || config.discord.guildId;
         const sub = interaction.options.getSubcommand();
 
         if (sub === 'agregar') {
           const target = interaction.options.getUser('usuario');
-          const added = db.addBotAdmin(target.id);
+          const added = db.forGuild(gId).addBotAdmin(target.id);
 
           if (added) {
             const embed = new EmbedBuilder()
               .setColor(0x2ecc71)
               .setTitle('👑 Nuevo Administrador del Bot')
               .setDescription(
-                `Se ha nombrado a <@${target.id}> (${target.tag}) como **Administrador del Bot**.\nAhora tiene acceso total para gestionar revendedores, stock y paneles.`
+                `Se ha nombrado a <@${target.id}> (${target.tag}) como **Administrador del Bot** en este servidor.\nAhora tiene acceso total para gestionar revendedores, stock y paneles de este servidor.`
               )
               .setTimestamp();
 
             const opAudit = getUserAuditInfo(interaction.member, interaction.user, config);
-            await logToAdminChannel(
+            await logToGuildAdminChannel(
+              client,
+              gId,
               new EmbedBuilder()
                 .setColor(0x16a34a)
                 .setTitle('[ADMINISTRACIÓN] Asignación de Administrador')
@@ -557,7 +568,7 @@ client.on('interactionCreate', async (interaction) => {
                   { name: 'Operador', value: `<@${interaction.user.id}>`, inline: true },
                   { name: 'Rango Operador', value: opAudit.role, inline: true },
                   { name: 'Usuario Designado', value: `<@${target.id}>`, inline: true },
-                  { name: 'Detalle', value: 'Privilegios totales concedidos sobre el bot.', inline: false }
+                  { name: 'Servidor', value: interaction.guild?.name || gId, inline: true }
                 )
                 .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
                 .setTimestamp()
@@ -566,7 +577,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ embeds: [embed], ephemeral: true });
           } else {
             return interaction.reply({
-              content: `ℹ️ El usuario <@${target.id}> ya era Administrador del Bot.`,
+              content: `ℹ️ El usuario <@${target.id}> ya era Administrador del Bot en este servidor.`,
               ephemeral: true,
             });
           }
@@ -574,49 +585,53 @@ client.on('interactionCreate', async (interaction) => {
 
         if (sub === 'quitar') {
           const target = interaction.options.getUser('usuario');
-          const removed = db.removeBotAdmin(target.id);
+          const removed = db.forGuild(gId).removeBotAdmin(target.id);
 
           if (removed) {
             const opAudit = getUserAuditInfo(interaction.member, interaction.user, config);
-            await logToAdminChannel(
+            await logToGuildAdminChannel(
+              client,
+              gId,
               new EmbedBuilder()
                 .setColor(0xdc2626)
                 .setTitle('[ADMINISTRACIÓN] Revocación de Administrador')
                 .addFields(
                   { name: 'Operador', value: `<@${interaction.user.id}>`, inline: true },
                   { name: 'Rango Operador', value: opAudit.role, inline: true },
-                  { name: 'Usuario Revocado', value: `<@${target.id}>`, inline: true }
+                  { name: 'Usuario Revocado', value: `<@${target.id}>`, inline: true },
+                  { name: 'Servidor', value: interaction.guild?.name || gId, inline: true }
                 )
                 .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
                 .setTimestamp()
             );
 
             return interaction.reply({
-              content: `🗑️ Se ha revocado el rango de Administrador del Bot a <@${target.id}>.`,
+              content: `🗑️ Se ha revocado el rango de Administrador del Bot a <@${target.id}> en este servidor.`,
               ephemeral: true,
             });
           } else {
             return interaction.reply({
-              content: `⚠️ El usuario <@${target.id}> no estaba en la lista de Administradores designados.`,
+              content: `⚠️ El usuario <@${target.id}> no estaba en la lista de Administradores de este servidor.`,
               ephemeral: true,
             });
           }
         }
 
         if (sub === 'lista') {
-          const list = db.getBotAdmins();
-          const serverOwnerId = interaction.guild?.ownerId;
+          const list = db.forGuild(gId).getBotAdmins();
+          const serverOwnerId = interaction.guild?.ownerId || config.discord.ownerId;
 
           const lines = [
-            `• 👑 **Dueño del Servidor:** <@${serverOwnerId}>`,
+            `• 👑 **Dueño:** <@${config.discord.ownerId}>`,
+            ...(serverOwnerId !== config.discord.ownerId ? [`• 👑 **Dueño del Servidor:** <@${serverOwnerId}>`] : []),
             ...list.map((id) => `• 🛡️ **Admin Designado:** <@${id}>`),
           ];
 
           const embed = new EmbedBuilder()
             .setColor(0xf1c40f)
-            .setTitle('👑 Administradores del Bot')
+            .setTitle(`👑 Administradores de ${interaction.guild?.name || 'Servidor'}`)
             .setDescription(lines.join('\n'))
-            .setFooter({ text: 'Sistema de Administradores' })
+            .setFooter({ text: 'Sistema de Administradores por Servidor' })
             .setTimestamp();
 
           return interaction.reply({ embeds: [embed], ephemeral: true });
