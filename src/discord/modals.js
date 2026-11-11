@@ -236,21 +236,21 @@ function getAdminAddStockModal() {
 
   const providerInput = new TextInputBuilder()
     .setCustomId('input_admin_stock_provider')
-    .setLabel('Plataforma (Únicamente KeyAuth)')
+    .setLabel('Plataforma (KeyAuth Elite Pro)')
     .setValue('keyauth')
     .setStyle(TextInputStyle.Short)
     .setRequired(true);
 
   const daysInput = new TextInputBuilder()
     .setCustomId('input_admin_stock_days')
-    .setLabel('Duración de estas Claves en Días *')
+    .setLabel('Duración en Días (Ej: 1, 7, 30) *')
     .setPlaceholder('30 (por defecto 30 días)')
     .setStyle(TextInputStyle.Short)
     .setRequired(false);
 
   const keysInput = new TextInputBuilder()
     .setCustomId('input_admin_stock_keys')
-    .setLabel('Pega las Claves (separadas por espacio/línea) *')
+    .setLabel('Lista de Claves (espacio o por línea) *')
     .setPlaceholder('TRYHARD-XXXX-YYYY\nTRYHARD-AAAA-BBBB')
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(true);
