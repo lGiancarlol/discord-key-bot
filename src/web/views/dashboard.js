@@ -1220,7 +1220,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
       ].join(';'));
 
       // Inclusión de BOM UTF-8 (\uFEFF) para compatibilidad total con Excel en español
-      const csvContent = '\uFEFF' + [headers.map(escapeCSV).join(';'), ...rows].join('\r\n');
+      const csvContent = '\uFEFF' + [headers.map(escapeCSV).join(';'), ...rows].join(String.fromCharCode(13, 10));
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -1355,19 +1355,16 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
       const note = document.getElementById('cfg_template_noteText')?.value.trim() || 'Válida para 1 solo dispositivo.';
       const footer = document.getElementById('cfg_template_footerText')?.value.trim();
 
-      const storeHeader = store ? ('⭐ ' + store.toUpperCase() + ' ⭐\n') : '';
-      const footerPart = footer ? ('\n💬 ' + footer) : '';
-
-      const preview =
-        storeHeader +
-        '🔑 Clave: Tryhard-3BxbSVFBhxP\n' +
-        '⏳ Duración: 30 Días\n' +
-        '📱 Plataforma: KeyAuth (Elite Pro)\n' +
-        '⚠️ Nota: ' + note +
-        footerPart;
+      const lines = [];
+      if (store) lines.push('⭐ ' + store.toUpperCase() + ' ⭐');
+      lines.push('🔑 Clave: Tryhard-3BxbSVFBhxP');
+      lines.push('⏳ Duración: 30 Días');
+      lines.push('📱 Plataforma: KeyAuth (Elite Pro)');
+      lines.push('⚠️ Nota: ' + note);
+      if (footer) lines.push('💬 ' + footer);
 
       const box = document.getElementById('templatePreviewBox');
-      if (box) box.innerText = preview;
+      if (box) box.innerText = lines.join(String.fromCharCode(10));
     }
 
     async function saveCustomTemplate(e) {
