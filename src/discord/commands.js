@@ -2,6 +2,11 @@ const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
 const commands = [
   new SlashCommandBuilder()
+    .setName('setup')
+    .setDescription('Configurar y crear automáticamente categoría y canales del bot en 1 clic')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  new SlashCommandBuilder()
     .setName('panel')
     .setDescription('Publicar o actualizar el panel interactivo de licencias')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),

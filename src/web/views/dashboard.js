@@ -1,9 +1,11 @@
 const config = require('../../config');
 
-function renderDashboardPage(user, guild, guildData, providersConfig) {
+function renderDashboardPage(user, guild, guildData, providersConfig, availableGuilds = []) {
   const gId = guild.id;
   const gName = guild.name;
   const gIcon = guild.iconURL ? guild.iconURL() : null;
+  const clientId = config.web.clientId;
+  const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&permissions=8&scope=bot%20applications.commands`;
 
   return `<!DOCTYPE html>
 <html lang="es" class="dark">
@@ -70,6 +72,11 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
 
       <!-- Derecha: Selector de Servidores y Perfil -->
       <div class="flex items-center gap-3">
+        <a href="${inviteUrl}" target="_blank" title="Invitar el bot a otro servidor de Discord" class="hidden sm:flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition shadow-lg shadow-indigo-600/20">
+          <i class="fa-brands fa-discord text-sm"></i>
+          <span>➕ Invitar Bot</span>
+        </a>
+
         <a href="/servers" class="hidden sm:flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 rounded-xl transition">
           <i class="fa-solid fa-server text-brand-400"></i>
           <span>Cambiar Servidor</span>
@@ -463,40 +470,95 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
     <div id="tab-settings" class="tab-content hidden space-y-8">
       <div>
         <h2 class="text-xl font-bold text-white">Configuración del Servidor</h2>
-        <p class="text-xs text-slate-400 mt-0.5">Asigna los canales de Discord de este servidor y personaliza las credenciales de tus páginas de forma independiente.</p>
+        <p class="text-xs text-slate-400 mt-0.5">Asigna los canales de Discord de este servidor, personaliza las credenciales, marca y clona configuraciones.</p>
       </div>
 
+      <!-- BANNER DE ASISTENTE RÁPIDO AUTO-SETUP -->
+      <div class="bg-gradient-to-r from-blue-950/80 via-indigo-950/70 to-slate-900 border border-blue-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+        <div class="absolute -right-6 -bottom-6 text-blue-500/10 text-9xl pointer-events-none">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+        </div>
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+          <div class="max-w-2xl space-y-1.5">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-500/30">
+              <i class="fa-solid fa-bolt"></i> Auto-Setup en 1 Clic
+            </span>
+            <h3 class="text-lg font-bold text-white">Asistente de Configuración Automática</h3>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              ¿Acabas de meter el bot al servidor? Pulsa este botón y el bot creará automáticamente la categoría 
+              <span class="text-blue-400 font-mono font-semibold">🔐 PANEL AUTH GATEWAY</span>, los canales 
+              <span class="text-blue-400 font-mono">#🔑-licencias</span>, 
+              <span class="text-blue-400 font-mono">#🛠️-admin-control</span>, 
+              <span class="text-blue-400 font-mono">#📜-auditoria-logs</span>, el canal de voz 
+              <span class="text-blue-400 font-mono">🔊-conexion-24-7</span>, configurará los permisos y publicará los paneles automáticamente.
+            </p>
+          </div>
+          <div class="flex items-center">
+            <button onclick="runAutoSetupChannels()" id="btnAutoSetup" class="w-full sm:w-auto px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm rounded-xl transition shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 whitespace-nowrap">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <span>Auto-Crear Canales Ahora</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fila 1: Canales de Discord y Credenciales Exclusivas -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <!-- Canales de Discord -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-          <h3 class="text-base font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
-            <i class="fa-brands fa-discord text-[#5865F2]"></i> Canales de Discord
-          </h3>
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 class="text-base font-bold text-white flex items-center gap-2">
+              <i class="fa-brands fa-discord text-[#5865F2]"></i> Canales y Notificaciones
+            </h3>
+            <button onclick="loadDiscordChannels()" type="button" title="Refrescar lista de canales desde Discord" class="text-xs text-slate-400 hover:text-white flex items-center gap-1">
+              <i class="fa-solid fa-arrows-rotate"></i> Refrescar
+            </button>
+          </div>
 
           <form id="formChannels" onsubmit="saveChannels(event)" class="space-y-4">
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">ID Canal Panel de Licencias (Revendedores)</label>
-              <input type="text" id="cfg_panelChannelId" placeholder="1569409213812187217" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+              <label class="block text-xs font-medium text-slate-400 mb-1">Canal Panel de Licencias (Revendedores)</label>
+              <select id="cfg_sel_panelChannelId" onchange="syncChannelInput('panelChannelId', this.value)" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500 mb-1">
+                <option value="">-- Cargando canales de Discord... --</option>
+              </select>
+              <input type="text" id="cfg_panelChannelId" placeholder="ID numérico (ej: 1569409213812187217)" class="w-full px-3 py-1.5 bg-slate-950/60 border border-slate-800 rounded-lg text-xs font-mono text-slate-400 focus:outline-none focus:border-brand-500">
             </div>
 
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">ID Canal Panel de Control (Administradores con Botones)</label>
-              <input type="text" id="cfg_adminPanelChannelId" placeholder="1569766838533886032" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+              <label class="block text-xs font-medium text-slate-400 mb-1">Canal Panel de Control (Administradores con Botones)</label>
+              <select id="cfg_sel_adminPanelChannelId" onchange="syncChannelInput('adminPanelChannelId', this.value)" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500 mb-1">
+                <option value="">-- Cargando canales de Discord... --</option>
+              </select>
+              <input type="text" id="cfg_adminPanelChannelId" placeholder="ID numérico (ej: 1569766838533886032)" class="w-full px-3 py-1.5 bg-slate-950/60 border border-slate-800 rounded-lg text-xs font-mono text-slate-400 focus:outline-none focus:border-brand-500">
             </div>
 
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">ID Canal de Auditoría y Logs</label>
-              <input type="text" id="cfg_logsChannelId" placeholder="1569409620563464263" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+              <label class="block text-xs font-medium text-slate-400 mb-1">Canal de Auditoría y Logs</label>
+              <select id="cfg_sel_logsChannelId" onchange="syncChannelInput('logsChannelId', this.value)" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500 mb-1">
+                <option value="">-- Cargando canales de Discord... --</option>
+              </select>
+              <input type="text" id="cfg_logsChannelId" placeholder="ID numérico (ej: 1569409620563464263)" class="w-full px-3 py-1.5 bg-slate-950/60 border border-slate-800 rounded-lg text-xs font-mono text-slate-400 focus:outline-none focus:border-brand-500">
             </div>
 
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">ID Canal de Voz 24/7</label>
-              <input type="text" id="cfg_voiceChannelId" placeholder="1569408755085348927" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+              <label class="block text-xs font-medium text-slate-400 mb-1">Canal de Voz 24/7</label>
+              <select id="cfg_sel_voiceChannelId" onchange="syncChannelInput('voiceChannelId', this.value)" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500 mb-1">
+                <option value="">-- Cargando canales de voz... --</option>
+              </select>
+              <input type="text" id="cfg_voiceChannelId" placeholder="ID numérico (ej: 1569408755085348927)" class="w-full px-3 py-1.5 bg-slate-950/60 border border-slate-800 rounded-lg text-xs font-mono text-slate-400 focus:outline-none focus:border-brand-500">
             </div>
 
-            <button type="submit" class="flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-medium text-sm rounded-xl transition">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Rol para Alertas de Seguridad & Stock Bajo (Opcional)</label>
+              <select id="cfg_sel_alertRoleId" onchange="syncChannelInput('alertRoleId', this.value)" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500 mb-1">
+                <option value="">-- Sin mención especial (solo registro en canal) --</option>
+              </select>
+              <input type="text" id="cfg_alertRoleId" placeholder="ID numérico del rol (ej: 123456789012345678)" class="w-full px-3 py-1.5 bg-slate-950/60 border border-slate-800 rounded-lg text-xs font-mono text-slate-400 focus:outline-none focus:border-brand-500">
+            </div>
+
+            <button type="submit" class="flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-medium text-sm rounded-xl transition shadow-lg shadow-brand-600/20">
               <i class="fa-solid fa-floppy-disk text-xs"></i>
-              <span>Guardar Canales</span>
+              <span>Guardar Canales & Notificaciones</span>
             </button>
           </form>
 
@@ -568,7 +630,68 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
         </div>
       </div>
 
-      <!-- Fila 2: Plantilla de Entrega y Respaldos -->
+      <!-- Fila 2: Marca (White-Label) & Clonar Configuración -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Personalización de Marca (White-Label) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <h3 class="text-base font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+            <i class="fa-solid fa-palette text-indigo-400"></i> Marca & Personalización (White-Label)
+          </h3>
+          <p class="text-xs text-slate-400">Personaliza el color de los embeds y el prefijo de las licencias generadas en este servidor.</p>
+
+          <form id="formBranding" onsubmit="saveBranding(event)" class="space-y-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Color Principal de Embeds en Discord</label>
+              <div class="flex items-center gap-3">
+                <input type="color" id="cfg_branding_color_picker" onchange="document.getElementById('cfg_branding_color').value = this.value" class="w-10 h-10 rounded-lg bg-transparent border-0 cursor-pointer">
+                <input type="text" id="cfg_branding_color" oninput="document.getElementById('cfg_branding_color_picker').value = this.value" placeholder="#2563eb" class="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Prefijo por Defecto para Licencias</label>
+              <input type="text" id="cfg_branding_prefix" placeholder="VIP" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+              <span class="text-[11px] text-slate-500 mt-1 block">Ejemplo: Si pones "VIP", las claves generadas iniciarán con ese prefijo.</span>
+            </div>
+
+            <button type="submit" class="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-xl transition shadow-lg shadow-indigo-600/20">
+              <i class="fa-solid fa-floppy-disk text-xs"></i>
+              <span>Guardar Marca</span>
+            </button>
+          </form>
+        </div>
+
+        <!-- Clonar Configuración de Otro Servidor -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4 flex flex-col justify-between">
+          <div class="space-y-3">
+            <h3 class="text-base font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+              <i class="fa-solid fa-copy text-amber-400"></i> Clonar Configuración de Otro Servidor
+            </h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Copia rápidamente los canales, la plantilla de WhatsApp, la marca y las credenciales exclusivas de otro servidor que administres hacia este servidor.
+            </p>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Seleccionar Servidor de Origen</label>
+              <select id="cfg_clone_sourceGuildId" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
+                ${availableGuilds.filter(g => g.id !== gId).length > 0 ?
+                  availableGuilds.filter(g => g.id !== gId).map(g => `<option value="${g.id}">${g.name} (${g.id})</option>`).join('')
+                  : '<option value="">No hay otros servidores disponibles</option>'
+                }
+              </select>
+            </div>
+          </div>
+
+          <div class="pt-4 border-t border-slate-800">
+            <button onclick="submitCloneConfig()" id="btnCloneConfig" type="button" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs rounded-xl transition shadow-lg shadow-amber-600/20">
+              <i class="fa-solid fa-clone"></i>
+              <span>Clonar Configuración a este Servidor</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fila 3: Plantilla de Entrega y Respaldos -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <!-- Plantilla de Entrega (WhatsApp / Telegram) -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
@@ -639,6 +762,39 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
               ` : ''}
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Fila 4: Registro de Auditoría Web de este Servidor -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div>
+            <h3 class="text-base font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-clock-rotate-left text-brand-400"></i> Registro de Auditoría Web (Este Servidor)
+            </h3>
+            <p class="text-xs text-slate-400 mt-0.5">Historial cronológico de cambios de configuración y acciones administrativas ejecutadas en este servidor.</p>
+          </div>
+          <button onclick="loadAuditLogs()" type="button" class="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg transition">
+            <i class="fa-solid fa-arrows-rotate"></i> Actualizar
+          </button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950/70 border-b border-slate-800 text-slate-400 uppercase tracking-wider">
+              <tr>
+                <th class="py-3 px-4">Fecha / Hora</th>
+                <th class="py-3 px-4">Operador</th>
+                <th class="py-3 px-4">Acción</th>
+                <th class="py-3 px-4">Detalles</th>
+              </tr>
+            </thead>
+            <tbody id="audit-table-body" class="divide-y divide-slate-800/60 font-mono">
+              <tr>
+                <td colspan="4" class="py-8 text-center text-slate-500 font-sans">Cargando registros de auditoría...</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -1319,11 +1475,25 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
         const res = await fetch(\`/api/guilds/\${currentGuildId}/config\`);
         const cfg = await res.json();
         
-        // Canales
+        // Canales y Alertas
         document.getElementById('cfg_panelChannelId').value = cfg.channels?.panelChannelId || '';
         document.getElementById('cfg_adminPanelChannelId').value = cfg.channels?.adminPanelChannelId || '';
         document.getElementById('cfg_logsChannelId').value = cfg.channels?.logsChannelId || '';
         document.getElementById('cfg_voiceChannelId').value = cfg.channels?.voiceChannelId || '';
+        document.getElementById('cfg_alertRoleId').value = cfg.channels?.alertRoleId || '';
+
+        // Marca (White-Label)
+        const branding = cfg.branding || {};
+        const color = branding.embedColor || '#2563eb';
+        document.getElementById('cfg_branding_color').value = color;
+        document.getElementById('cfg_branding_color_picker').value = color;
+        document.getElementById('cfg_branding_prefix').value = branding.defaultPrefix || 'VIP';
+
+        // Cargar listas desplegables de Discord
+        loadDiscordChannels();
+
+        // Cargar Registro de Auditoría
+        loadAuditLogs();
 
         // Proveedores
         const prov = cfg.providersConfig || {};
@@ -1347,6 +1517,179 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
         }
       } catch (err) {
         console.error('Error al cargar config:', err);
+      }
+    }
+
+    async function loadDiscordChannels() {
+      try {
+        const res = await fetch(\`/api/guilds/\${currentGuildId}/discord-channels\`);
+        const data = await res.json();
+        if (data.error) return;
+
+        const textList = data.textChannels || [];
+        const voiceList = data.voiceChannels || [];
+        const roleList = data.roles || [];
+
+        function buildChannelOptions(list, currentVal, placeholder) {
+          let html = '<option value="">' + placeholder + '</option>';
+          let hasMatch = false;
+          list.forEach(c => {
+            const isSel = String(c.id) === String(currentVal);
+            if (isSel) hasMatch = true;
+            const parent = c.parentName ? ' [' + c.parentName + ']' : '';
+            html += '<option value="' + c.id + '"' + (isSel ? ' selected' : '') + '>#' + c.name + parent + '</option>';
+          });
+          if (currentVal && !hasMatch) {
+            html += '<option value="' + currentVal + '" selected>[ID Configurado: ' + currentVal + ']</option>';
+          }
+          return html;
+        }
+
+        function buildRoleOptions(list, currentVal) {
+          let html = '<option value="">-- Sin mención especial (solo registro en canal) --</option>';
+          let hasMatch = false;
+          list.forEach(r => {
+            const isSel = String(r.id) === String(currentVal);
+            if (isSel) hasMatch = true;
+            html += '<option value="' + r.id + '"' + (isSel ? ' selected' : '') + '>@' + r.name + '</option>';
+          });
+          if (currentVal && !hasMatch) {
+            html += '<option value="' + currentVal + '" selected>[ID Configurado: ' + currentVal + ']</option>';
+          }
+          return html;
+        }
+
+        const pVal = document.getElementById('cfg_panelChannelId').value;
+        const apVal = document.getElementById('cfg_adminPanelChannelId').value;
+        const lVal = document.getElementById('cfg_logsChannelId').value;
+        const vVal = document.getElementById('cfg_voiceChannelId').value;
+        const aVal = document.getElementById('cfg_alertRoleId').value;
+
+        document.getElementById('cfg_sel_panelChannelId').innerHTML = buildChannelOptions(textList, pVal, '-- Seleccionar canal de texto --');
+        document.getElementById('cfg_sel_adminPanelChannelId').innerHTML = buildChannelOptions(textList, apVal, '-- Seleccionar canal de texto --');
+        document.getElementById('cfg_sel_logsChannelId').innerHTML = buildChannelOptions(textList, lVal, '-- Seleccionar canal de texto --');
+        document.getElementById('cfg_sel_voiceChannelId').innerHTML = buildChannelOptions(voiceList, vVal, '-- Seleccionar canal de voz --');
+        document.getElementById('cfg_sel_alertRoleId').innerHTML = buildRoleOptions(roleList, aVal);
+      } catch (err) {
+        console.error('Error cargando canales de Discord:', err);
+      }
+    }
+
+    function syncChannelInput(field, val) {
+      const input = document.getElementById('cfg_' + field);
+      if (input) input.value = val || '';
+    }
+
+    async function runAutoSetupChannels() {
+      if (!confirm('¿Deseas ejecutar el Asistente de Auto-Configuración?\\n\\nSe creará automáticamente la categoría [🔐 PANEL AUTH GATEWAY], los 4 canales correspondientes, los permisos de seguridad y se publicarán los paneles interactivos.')) return;
+
+      const btn = document.getElementById('btnAutoSetup');
+      const prevHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Creando Canales y Paneles...';
+
+      try {
+        const res = await fetch(\`/api/guilds/\${currentGuildId}/auto-setup-channels\`, { method: 'POST' });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        showToast('¡Auto-Setup completado! Canales creados y paneles publicados.');
+        await loadSettings();
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = prevHtml;
+      }
+    }
+
+    async function submitCloneConfig() {
+      const sourceSelect = document.getElementById('cfg_clone_sourceGuildId');
+      const sourceGuildId = sourceSelect ? sourceSelect.value : null;
+
+      if (!sourceGuildId) {
+        showToast('Selecciona un servidor de origen válido.', 'error');
+        return;
+      }
+
+      const sourceName = sourceSelect.options[sourceSelect.selectedIndex]?.text || sourceGuildId;
+      if (!confirm('¿Estás seguro de clonar la configuración desde \"' + sourceName + '\"?\\n\\nSe copiarán canales, credenciales, plantilla de entrega y marca a este servidor.')) return;
+
+      const btn = document.getElementById('btnCloneConfig');
+      const prevHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Clonando...';
+
+      try {
+        const res = await fetch(\`/api/guilds/\${currentGuildId}/clone-config\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sourceGuildId })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        showToast('Configuración clonada exitosamente.');
+        await loadSettings();
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = prevHtml;
+      }
+    }
+
+    async function saveBranding(e) {
+      e.preventDefault();
+      const branding = {
+        embedColor: document.getElementById('cfg_branding_color').value.trim() || '#2563eb',
+        defaultPrefix: document.getElementById('cfg_branding_prefix').value.trim() || 'VIP'
+      };
+
+      try {
+        const res = await fetch(\`/api/guilds/\${currentGuildId}/config\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ branding })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        showToast('Personalización de marca guardada.');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function loadAuditLogs() {
+      const tbody = document.getElementById('audit-table-body');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-slate-500 font-sans"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Cargando registros...</td></tr>';
+      try {
+        const res = await fetch(\`/api/guilds/\${currentGuildId}/audit-logs\`);
+        const logs = await res.json();
+        if (!Array.isArray(logs) || logs.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-slate-500 font-sans">No hay registros de auditoría en este servidor aún.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = logs.map(l => {
+          const dateStr = l.timestamp ? new Date(l.timestamp).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : 'Reciente';
+          return \`
+            <tr class="hover:bg-slate-800/30 transition">
+              <td class="py-3 px-4 text-slate-400 whitespace-nowrap">\${dateStr}</td>
+              <td class="py-3 px-4">
+                <span class="font-bold text-slate-200">\${l.operatorTag || 'Admin'}</span>
+                \${l.operatorId ? '<span class="text-[10px] text-slate-500 block font-mono">' + l.operatorId + '</span>' : ''}
+              </td>
+              <td class="py-3 px-4">
+                <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">\${l.action || 'CONFIG'}</span>
+              </td>
+              <td class="py-3 px-4 text-slate-300 font-sans text-xs">\${l.details || '-'}</td>
+            </tr>
+          \`;
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-red-400 font-sans">Error al cargar auditoría: ' + err.message + '</td></tr>';
       }
     }
 
@@ -1396,6 +1739,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig) {
         adminPanelChannelId: document.getElementById('cfg_adminPanelChannelId').value.trim(),
         logsChannelId: document.getElementById('cfg_logsChannelId').value.trim(),
         voiceChannelId: document.getElementById('cfg_voiceChannelId').value.trim(),
+        alertRoleId: document.getElementById('cfg_alertRoleId').value.trim(),
       };
 
       try {

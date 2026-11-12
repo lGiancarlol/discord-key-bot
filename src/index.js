@@ -16,6 +16,7 @@ const config = require('./config');
 const db = require('./database');
 const providerManager = require('./providers');
 const { createPanelPayload, createAdminPanelPayload } = require('./discord/panel');
+const { autoSetupGuildChannels } = require('./discord/setup');
 const { startWebServer } = require('./web/server');
 const {
   getCreateKeyModal,
@@ -134,8 +135,8 @@ function getUserAuditInfo(member, user, cfg = config, guildId = null) {
   };
 }
 
-// Log a canal de auditoría (por servidor)
-async function logToAdminChannel(embed, guildId = null) {
+// Log a canal de auditoría (por servidor) con mención de rol de alerta si corresponde
+async function logToAdminChannel(embed, guildId = null, isAlert = false) {
   const gId = guildId || config.discord.guildId;
   const gConfig = db.forGuild(gId).getConfig();
   const targetChannelId = gConfig?.channels?.logsChannelId || (gId === config.discord.guildId ? config.discord.logsChannelId : null);
@@ -143,11 +144,25 @@ async function logToAdminChannel(embed, guildId = null) {
   try {
     const channel = await client.channels.fetch(targetChannelId).catch(() => null);
     if (channel && channel.isTextBased()) {
-      await channel.send({ embeds: [embed] });
+      const alertRoleId = gConfig?.channels?.alertRoleId;
+      const title = embed?.data?.title || '';
+      const shouldPing = alertRoleId && (isAlert || title.includes('ALERTA') || title.includes('SEGURIDAD'));
+      await channel.send({
+        content: shouldPing ? `<@&${alertRoleId}>` : undefined,
+        embeds: [embed],
+      });
     }
   } catch (err) {
     console.error(`[Logs] Error al enviar log a guild ${gId}:`, err.message);
   }
+}
+
+// Helper compatible para llamadas logToGuildAdminChannel(guild/client, gId, embed)
+async function logToGuildAdminChannel(target, gId, embed) {
+  if (target instanceof EmbedBuilder) {
+    return logToAdminChannel(target, gId);
+  }
+  return logToAdminChannel(embed || gId, typeof gId === 'string' ? gId : null);
 }
 
 // Evento Ready
@@ -492,6 +507,48 @@ client.on('interactionCreate', async (interaction) => {
     // 1. COMANDOS SLASH
     if (interaction.isChatInputCommand()) {
       const { commandName } = interaction;
+
+      // /setup (Configuración inicial en 1 clic)
+      if (commandName === 'setup') {
+        const perms = db.getUserPermissions(interaction.member, config, interaction.guildId);
+        if (!perms.isAdmin) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** Solo administradores pueden ejecutar la configuración automática.',
+            ephemeral: true,
+          });
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+
+        try {
+          const result = await autoSetupGuildChannels(
+            interaction.guild,
+            client,
+            db,
+            interaction.user.tag
+          );
+
+          const setupEmbed = new EmbedBuilder()
+            .setColor(0x10b981)
+            .setTitle('🚀 Configuración Automática Completada')
+            .setDescription(
+              `Se han creado y vinculado con éxito todos los canales en **${interaction.guild.name}**:\n\n` +
+              `• 🔑 **Panel de Licencias:** <#${result.channels.panelChannelId}>\n` +
+              `• 🛠️ **Panel Administrativo:** <#${result.channels.adminPanelChannelId}>\n` +
+              `• 📜 **Auditoría & Logs:** <#${result.channels.logsChannelId}>\n` +
+              `• 🔊 **Voz 24/7:** <#${result.channels.voiceChannelId}>\n\n` +
+              `✅ Los paneles interactivos ya han sido publicados en sus respectivos canales y están listos para operar.`
+            )
+            .setFooter({ text: 'Sistema Multi-Servidor • Auth Gateway' })
+            .setTimestamp();
+
+          return interaction.editReply({ embeds: [setupEmbed] });
+        } catch (err) {
+          return interaction.editReply({
+            content: `❌ **Error al configurar canales:** ${err.message}`,
+          });
+        }
+      }
 
       // /panel
       if (commandName === 'panel') {

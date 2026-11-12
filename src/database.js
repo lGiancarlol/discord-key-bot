@@ -17,12 +17,18 @@ const createDefaultGuildData = (guildId, guildName = '') => ({
     adminPanelChannelId: (guildId === config.discord.guildId ? config.discord.adminPanelChannelId : '') || '',
     logsChannelId: (guildId === config.discord.guildId ? config.discord.logsChannelId : '') || '',
     voiceChannelId: (guildId === config.discord.guildId ? config.discord.voiceChannelId : '') || '',
+    alertRoleId: '',
+  },
+  branding: {
+    embedColor: '#2563eb',
+    defaultPrefix: 'VIP',
   },
   customTemplate: {
     storeName: 'Auth Cloud Gateway',
     noteText: 'Válida para 1 solo dispositivo.',
     footerText: '',
   },
+  webAuditLogs: [],
   providersConfig: {
     bypass: {
       enabled: true,
@@ -135,10 +141,12 @@ class Database {
               ...createDefaultGuildData(guildId),
               ...parsed,
               channels: { ...createDefaultGuildData(guildId).channels, ...(parsed.channels || {}) },
+              branding: { ...createDefaultGuildData(guildId).branding, ...(parsed.branding || {}) },
               customTemplate: { ...createDefaultGuildData(guildId).customTemplate, ...(parsed.customTemplate || {}) },
               providersConfig: { ...createDefaultGuildData(guildId).providersConfig, ...(parsed.providersConfig || {}) },
               keyStock: { ...createDefaultGuildData(guildId).keyStock, ...(parsed.keyStock || {}) },
               resellers: parsed.resellers || {},
+              webAuditLogs: parsed.webAuditLogs || [],
               generatedKeys: parsed.generatedKeys || [],
             };
           } catch (err) {
@@ -280,6 +288,10 @@ class Database {
       guildId: gData.guildId,
       name: gData.name,
       channels: gData.channels || {},
+      branding: gData.branding || {
+        embedColor: '#2563eb',
+        defaultPrefix: 'VIP',
+      },
       customTemplate: gData.customTemplate || {
         storeName: 'Auth Cloud Gateway',
         noteText: 'Válida para 1 solo dispositivo.',
@@ -295,6 +307,9 @@ class Database {
     if (newConfig.channels) {
       gData.channels = { ...gData.channels, ...newConfig.channels };
     }
+    if (newConfig.branding) {
+      gData.branding = { ...(gData.branding || {}), ...newConfig.branding };
+    }
     if (newConfig.customTemplate) {
       gData.customTemplate = { ...(gData.customTemplate || {}), ...newConfig.customTemplate };
     }
@@ -303,6 +318,71 @@ class Database {
     }
     this.saveGuild(guildId);
     return this.getGuildConfig(guildId);
+  }
+
+  // ── AUDITORÍA INTERNA DE OPERACIONES WEB / ADMINISTRATIVAS ──
+
+  recordWebAuditLog(guildId, { operatorTag, operatorId, action, details, ip = '' }) {
+    const gData = this.getGuildData(guildId);
+    if (!gData.webAuditLogs) gData.webAuditLogs = [];
+
+    const entry = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      operatorTag: operatorTag || 'Admin',
+      operatorId: operatorId || 'WEB',
+      action: action || 'ACTION',
+      details: details || '',
+      ip: ip ? ip.replace(/^.*:/, '') : '',
+    };
+
+    gData.webAuditLogs.push(entry);
+    if (gData.webAuditLogs.length > 100) {
+      gData.webAuditLogs = gData.webAuditLogs.slice(-100);
+    }
+
+    this.saveGuild(guildId);
+    return entry;
+  }
+
+  getWebAuditLogs(guildId, limit = 50) {
+    const gData = this.getGuildData(guildId);
+    const logs = gData.webAuditLogs || [];
+    return logs.slice(-limit).reverse();
+  }
+
+  // ── CLONADO DE CONFIGURACIÓN ENTRE SERVIDORES ──
+
+  cloneConfig(sourceGuildId, targetGuildId, operatorTag = 'Admin') {
+    const sourceData = this.getGuildData(sourceGuildId);
+    const targetData = this.getGuildData(targetGuildId);
+
+    if (!sourceData || !targetData) {
+      throw new Error('Servidor de origen o destino no encontrado.');
+    }
+
+    // Copiar credenciales de proveedores
+    targetData.providersConfig = JSON.parse(JSON.stringify(sourceData.providersConfig || {}));
+
+    // Copiar plantilla de WhatsApp
+    targetData.customTemplate = JSON.parse(JSON.stringify(sourceData.customTemplate || {}));
+
+    // Copiar marca y colores
+    targetData.branding = JSON.parse(JSON.stringify(sourceData.branding || {}));
+
+    // Copiar alertRoleId si existe
+    if (sourceData.channels?.alertRoleId) {
+      targetData.channels.alertRoleId = sourceData.channels.alertRoleId;
+    }
+
+    this.recordWebAuditLog(targetGuildId, {
+      operatorTag,
+      action: 'CLONE_CONFIG',
+      details: `Configuración copiada desde el servidor ${sourceData.name || sourceGuildId}.`,
+    });
+
+    this.saveGuild(targetGuildId);
+    return this.getGuildConfig(targetGuildId);
   }
 
   // ── GESTIÓN DE ADMINISTRADORES DEL BOT (POR GUILD) ──
@@ -839,6 +919,9 @@ class Database {
       getAllKeys: (limit) => this.getAllKeys(limit, gId),
       findKey: (key) => this.findKey(key, gId),
       deleteKeyRecord: (keyId) => this.deleteKeyRecord(keyId, gId),
+      recordWebAuditLog: (params) => this.recordWebAuditLog(gId, params),
+      getWebAuditLogs: (limit) => this.getWebAuditLogs(gId, limit),
+      cloneConfigFrom: (sourceGuildId, operatorTag) => this.cloneConfig(sourceGuildId, gId, operatorTag),
     };
   }
 }

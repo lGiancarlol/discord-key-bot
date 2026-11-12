@@ -6,6 +6,7 @@ const config = require('../config');
 const db = require('../database');
 const providerManager = require('../providers');
 const { createPanelPayload, createAdminPanelPayload } = require('../discord/panel');
+const { autoSetupGuildChannels } = require('../discord/setup');
 const {
   getDiscordAuthUrl,
   exchangeDiscordCode,
@@ -49,15 +50,21 @@ function createRateLimiter({ windowMs = 60000, max = 60, message = 'Demasiadas s
   };
 }
 
-// Enviar log administrativo al canal configurado de una guild
-async function logToGuildAdminChannel(client, guildId, embed) {
+// Enviar log administrativo al canal configurado de una guild con mención de rol de alerta si corresponde
+async function logToGuildAdminChannel(client, guildId, embed, isAlert = false) {
   try {
     const gConfig = db.forGuild(guildId).getConfig();
     const channelId = gConfig?.channels?.logsChannelId || (guildId === config.discord.guildId ? config.discord.logsChannelId : null);
     if (!channelId) return;
     const channel = await client.channels.fetch(channelId).catch(() => null);
     if (channel && channel.isTextBased()) {
-      await channel.send({ embeds: [embed] });
+      const alertRoleId = gConfig?.channels?.alertRoleId;
+      const title = embed?.data?.title || '';
+      const shouldPing = alertRoleId && (isAlert || title.includes('ALERTA') || title.includes('SEGURIDAD'));
+      await channel.send({
+        content: shouldPing ? `<@&${alertRoleId}>` : undefined,
+        embeds: [embed],
+      });
     }
   } catch (err) {
     console.error(`[Web Logs] Error al enviar log a guild ${guildId}:`, err.message);
@@ -204,7 +211,16 @@ function createWebServer(client) {
       iconURL: () => null,
     };
     const guildData = req.guildDb.getData();
-    res.send(renderDashboardPage(req.session.user, guild, guildData, config.providers));
+    let availableGuilds = [];
+    if (req.session.user.isMasterOwner) {
+      availableGuilds = db.getGuildList();
+    } else {
+      availableGuilds = (req.session.authorizedGuilds || []).map((ag) => ({
+        id: ag.id,
+        name: ag.name,
+      }));
+    }
+    res.send(renderDashboardPage(req.session.user, guild, guildData, config.providers, availableGuilds));
   });
 
   // ── API ENDPOINTS (MULTI-TENANT POR GUILD) ──
@@ -579,9 +595,18 @@ function createWebServer(client) {
 
   // 12. Guardar Configuración de Servidor
   app.post('/api/guilds/:guildId/config', requireAuth, requireGuildAccess(client, db), (req, res) => {
-    const { channels, customTemplate, providersConfig } = req.body;
-    const updated = req.guildDb.updateConfig({ channels, customTemplate, providersConfig });
+    const { channels, customTemplate, providersConfig, branding } = req.body;
+    const updated = req.guildDb.updateConfig({ channels, customTemplate, providersConfig, branding });
     providerManager.invalidateGuild(req.params.guildId);
+
+    req.guildDb.recordWebAuditLog({
+      operatorTag: req.user.username,
+      operatorId: req.user.id,
+      action: 'UPDATE_CONFIG',
+      details: 'Configuración de canales, credenciales o marca actualizada.',
+      ip: req.ip,
+    });
+
     res.json({ success: true, config: updated });
   });
 
@@ -605,6 +630,113 @@ function createWebServer(client) {
     }
     const filename = `backup-master-${new Date().toISOString().slice(0, 10)}.json`;
     res.download(backupFile, filename);
+  });
+
+  // 12d. Obtener Canales y Roles de Discord de este Servidor (Para Selectores Desplegables)
+  app.get('/api/guilds/:guildId/discord-channels', requireAuth, requireGuildAccess(client, db), async (req, res) => {
+    const guild = req.guild || client.guilds.cache.get(req.params.guildId);
+    if (!guild) {
+      return res.status(404).json({ error: 'El bot no está presente en este servidor.' });
+    }
+
+    try {
+      const textChannels = [];
+      const voiceChannels = [];
+      const roles = [];
+
+      guild.channels.cache.forEach((c) => {
+        if (c.isTextBased()) {
+          textChannels.push({
+            id: c.id,
+            name: c.name,
+            parentName: c.parent?.name || null,
+          });
+        } else if (c.isVoiceBased()) {
+          voiceChannels.push({
+            id: c.id,
+            name: c.name,
+            parentName: c.parent?.name || null,
+          });
+        }
+      });
+
+      textChannels.sort((a, b) => a.name.localeCompare(b.name));
+      voiceChannels.sort((a, b) => a.name.localeCompare(b.name));
+
+      guild.roles.cache.forEach((r) => {
+        if (r.id !== guild.id && !r.managed) {
+          roles.push({
+            id: r.id,
+            name: r.name,
+            color: r.hexColor,
+          });
+        }
+      });
+      roles.sort((a, b) => a.name.localeCompare(b.name));
+
+      res.json({ textChannels, voiceChannels, roles });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 12e. Auto-Crear y Configurar Canales en 1 Clic (Asistente de Auto-Setup)
+  app.post('/api/guilds/:guildId/auto-setup-channels', requireAuth, requireGuildAccess(client, db), async (req, res) => {
+    const guild = req.guild || client.guilds.cache.get(req.params.guildId);
+    if (!guild) {
+      return res.status(404).json({ error: 'El bot no está presente en este servidor de Discord.' });
+    }
+
+    try {
+      const result = await autoSetupGuildChannels(guild, client, db, `${req.user.username} (Panel Web)`);
+      req.guildDb.recordWebAuditLog({
+        operatorTag: req.user.username,
+        operatorId: req.user.id,
+        action: 'AUTO_SETUP_CHANNELS',
+        details: 'Asistente de auto-creación ejecutado: categoría y 4 canales creados con paneles publicados.',
+        ip: req.ip,
+      });
+
+      res.json(result);
+    } catch (err) {
+      console.error('[AutoSetup API Error]', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 12f. Clonar Configuración de Otro Servidor
+  app.post('/api/guilds/:guildId/clone-config', requireAuth, requireGuildAccess(client, db), (req, res) => {
+    const { sourceGuildId } = req.body;
+    const { guildId } = req.params;
+
+    if (!sourceGuildId) {
+      return res.status(400).json({ error: 'Debes seleccionar un servidor de origen.' });
+    }
+
+    if (sourceGuildId === guildId) {
+      return res.status(400).json({ error: 'El servidor de origen no puede ser el mismo servidor actual.' });
+    }
+
+    if (!req.session.user.isMasterOwner) {
+      const authorized = (req.session.authorizedGuilds || []).some((g) => g.id === sourceGuildId);
+      if (!authorized) {
+        return res.status(403).json({ error: 'No tienes permisos de administrador en el servidor de origen.' });
+      }
+    }
+
+    try {
+      const updated = req.guildDb.cloneConfigFrom(sourceGuildId, `${req.user.username} (Panel Web)`);
+      providerManager.invalidateGuild(guildId);
+      res.json({ success: true, config: updated });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 12g. Obtener Registro de Auditoría Web de este Servidor
+  app.get('/api/guilds/:guildId/audit-logs', requireAuth, requireGuildAccess(client, db), (req, res) => {
+    const logs = req.guildDb.getWebAuditLogs(50);
+    res.json(logs);
   });
 
   // 13. Publicar Panel de Licencias en Discord
