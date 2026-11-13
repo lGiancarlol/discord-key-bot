@@ -13,6 +13,7 @@ const DEFAULT_PROVIDER_METADATA = {
   bypass_uid: { name: 'Bypass UID (Auto ON)', desc: 'Licencias con UID ON', icon: '🛡️' },
   mycheats: { name: 'WorldCheats (Panel VIP)', desc: 'Cuentas de usuario', icon: '👤' },
   keyauth: { name: 'KeyAuth (Elite Pro)', desc: 'Licencias oficiales', icon: '🔑' },
+  realauthx: { name: 'RealAuthX (Roblox)', desc: 'Licencias Roblox', icon: '🎮' },
 };
 
 const getTodayKey = () => new Date().toISOString().slice(0, 10);
@@ -20,7 +21,7 @@ const getTodayKey = () => new Date().toISOString().slice(0, 10);
 const createDefaultGuildData = (guildId, guildName = '') => ({
   guildId,
   name: guildName || `Servidor ${guildId}`,
-  enabledProviders: ['bypass', 'bypass_uid', 'mycheats', 'keyauth'],
+  enabledProviders: ['bypass', 'bypass_uid', 'mycheats', 'keyauth', 'realauthx'],
   providersMetadata: JSON.parse(JSON.stringify(DEFAULT_PROVIDER_METADATA)),
   channels: {
     panelChannelId: (guildId === config.discord.guildId ? config.discord.panelChannelId : '') || '',
@@ -68,6 +69,14 @@ const createDefaultGuildData = (guildId, guildName = '') => ({
       enabled: true,
       sellerKey: '',
     },
+    realauthx: {
+      enabled: true,
+      baseUrl: '',
+      username: '',
+      password: '',
+      appId: '',
+      defaultSubId: '',
+    },
   },
   botAdmins: [],
   permissions: {},
@@ -77,6 +86,7 @@ const createDefaultGuildData = (guildId, guildName = '') => ({
     bypass: [],
     bypass_uid: [],
     mycheats: [],
+    realauthx: [],
   },
   generatedKeys: [],
 });
@@ -158,7 +168,7 @@ class Database {
             this.guilds[guildId] = {
               ...createDefaultGuildData(guildId),
               ...parsed,
-              enabledProviders: Array.isArray(parsed.enabledProviders) && parsed.enabledProviders.length > 0 ? parsed.enabledProviders : ['bypass', 'bypass_uid', 'mycheats', 'keyauth'],
+              enabledProviders: Array.isArray(parsed.enabledProviders) && parsed.enabledProviders.length > 0 ? parsed.enabledProviders : ['bypass', 'bypass_uid', 'mycheats', 'keyauth', 'realauthx'],
               providersMetadata: { ...createDefaultGuildData(guildId).providersMetadata, ...(parsed.providersMetadata || {}) },
               channels: { ...createDefaultGuildData(guildId).channels, ...(parsed.channels || {}) },
               branding: { ...createDefaultGuildData(guildId).branding, ...(parsed.branding || {}) },
@@ -378,12 +388,12 @@ class Database {
     if (Array.isArray(gData.enabledProviders) && gData.enabledProviders.length > 0) {
       return gData.enabledProviders;
     }
-    return ['bypass', 'bypass_uid', 'mycheats', 'keyauth'];
+    return ['bypass', 'bypass_uid', 'mycheats', 'keyauth', 'realauthx'];
   }
 
   setEnabledProviders(guildId, providersArray) {
     const gData = this.getGuildData(guildId);
-    const valid = ['bypass', 'bypass_uid', 'mycheats', 'keyauth'];
+    const valid = ['bypass', 'bypass_uid', 'mycheats', 'keyauth', 'realauthx'];
     const filtered = (Array.isArray(providersArray) ? providersArray : []).filter((p) => valid.includes(p));
     gData.enabledProviders = filtered.length > 0 ? filtered : valid;
     this.saveGuild(guildId);
@@ -477,7 +487,7 @@ class Database {
     targetData.branding = JSON.parse(JSON.stringify(sourceData.branding || {}));
 
     // Copiar plataformas habilitadas y sus nombres personalizados
-    targetData.enabledProviders = JSON.parse(JSON.stringify(sourceData.enabledProviders || ['bypass', 'bypass_uid', 'mycheats', 'keyauth']));
+    targetData.enabledProviders = JSON.parse(JSON.stringify(sourceData.enabledProviders || ['bypass', 'bypass_uid', 'mycheats', 'keyauth', 'realauthx']));
     targetData.providersMetadata = JSON.parse(JSON.stringify(sourceData.providersMetadata || {}));
 
     // Copiar alertRoleId si existe

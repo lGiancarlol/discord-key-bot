@@ -410,6 +410,20 @@ function createWebServer(client) {
     }
   });
 
+  // 7.2 Suscripciones de RealAuthX (Roblox)
+  app.get('/api/guilds/:guildId/providers/realauthx/subscriptions', requireAuth, requireGuildAccess(client, db), async (req, res) => {
+    try {
+      const provider = providerManager.getForGuild('realauthx', req.params.guildId, db);
+      if (!provider) {
+        return res.status(404).json({ error: 'RealAuthX no configurado en este servidor.' });
+      }
+      const subs = await provider.getSubscriptions();
+      res.json({ success: true, subscriptions: subs });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // 8. Emisión Rápida de Licencias desde Web
   app.post('/api/guilds/:guildId/keys/create', requireAuth, requireGuildAccess(client, db), async (req, res) => {
     const { providerId, days = 30, count = 1, prefix = '', note = '', subId = null } = req.body;

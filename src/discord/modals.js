@@ -49,6 +49,7 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = 
 
   const isUserAccount = providerId === 'mycheats';
   const isUid = providerId === 'bypass_uid';
+  const isRealAuthX = providerId === 'realauthx';
 
   let title = '⚡ Crear Licencia Bypass APK';
   let modalCustomId = `modal_create_${providerId}`;
@@ -58,6 +59,10 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = 
     if (subId) modalCustomId = `modal_create_mycheats_${subId}`;
   }
   if (isUid) title = '🛡️ Crear Licencia Bypass UID (Auto ON)';
+  if (isRealAuthX) {
+    title = subName ? `🎮 ${subName}`.slice(0, 45) : '🎮 Crear Licencia RealAuthX (Roblox)';
+    if (subId) modalCustomId = `modal_create_realauthx_${subId}`;
+  }
 
   const modal = new ModalBuilder()
     .setCustomId(modalCustomId)

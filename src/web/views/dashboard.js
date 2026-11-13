@@ -371,6 +371,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
             <option value="bypass">Bypass APK</option>
             <option value="bypass_uid">Bypass UID</option>
             <option value="mycheats">WorldCheats</option>
+            <option value="realauthx">RealAuthX (Roblox)</option>
           </select>
           <button onclick="exportKeysToCSV()" class="flex items-center justify-center gap-2 px-3.5 py-2 bg-emerald-700/30 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 rounded-xl text-sm font-medium transition whitespace-nowrap shadow-sm">
             <i class="fa-solid fa-file-excel text-xs"></i>
@@ -422,6 +423,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
                 <option value="bypass">Bypass APK</option>
                 <option value="bypass_uid">Bypass UID (Auto ON)</option>
                 <option value="mycheats">WorldCheats (Panel VIP)</option>
+                <option value="realauthx">RealAuthX (Roblox)</option>
               </select>
             </div>
 
@@ -583,6 +585,17 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
               </div>
             </label>
 
+            <!-- RealAuthX -->
+            <label class="flex items-start gap-3 p-4 bg-slate-950/70 border border-slate-800 hover:border-slate-700 rounded-xl cursor-pointer transition group">
+              <input type="checkbox" id="plat_check_realauthx" name="enabled_platforms" value="realauthx" class="mt-1 rounded bg-slate-800 border-slate-700 text-brand-600 focus:ring-0">
+              <div>
+                <span class="block text-sm font-bold text-white group-hover:text-brand-400 transition flex items-center gap-1.5">
+                  🎮 RealAuthX (Roblox)
+                </span>
+                <span class="text-[11px] text-slate-400 block mt-0.5">Licencias para Roblox (www.realauthx.com)</span>
+              </div>
+            </label>
+
           </div>
 
           <div class="flex items-center justify-between pt-2">
@@ -665,6 +678,21 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
               <div>
                 <label class="block text-[11px] font-medium text-slate-400 mb-1">Descripción / Subtítulo</label>
                 <input type="text" id="cfg_meta_keyauth_desc" placeholder="Licencias oficiales" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+            </div>
+
+            <!-- RealAuthX (Roblox) -->
+            <div class="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2.5">
+              <span class="text-xs font-bold text-white flex items-center gap-1.5 border-b border-slate-800/80 pb-2">
+                🎮 RealAuthX (Roblox)
+              </span>
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Nombre Visible</label>
+                <input type="text" id="cfg_meta_realauthx_name" placeholder="RealAuthX (Roblox)" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Descripción / Subtítulo</label>
+                <input type="text" id="cfg_meta_realauthx_desc" placeholder="Licencias Roblox" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-brand-500">
               </div>
             </div>
           </div>
@@ -817,6 +845,33 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
                     <option value="239">239 - Ultimate (Level 2)</option>
                     <option value="241">241 - Classic (Level 3)</option>
                     <option value="245">245 - SkinChanger (Level 5)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- RealAuthX (Roblox) -->
+            <div class="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800 space-y-2">
+              <span class="text-xs font-bold text-brand-400 block">RealAuthX (www.realauthx.com - Roblox)</span>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-[11px] text-slate-400 mb-1">Usuario</label>
+                  <input type="text" id="cfg_realauthx_username" placeholder="GianAdmin1" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+                </div>
+                <div>
+                  <label class="block text-[11px] text-slate-400 mb-1">Contraseña</label>
+                  <input type="password" id="cfg_realauthx_password" placeholder="••••••••" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2 pt-1">
+                <div>
+                  <label class="block text-[11px] text-slate-400 mb-1">App ID (Autodetectable, ej: 521)</label>
+                  <input type="text" id="cfg_realauthx_appId" placeholder="521" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+                </div>
+                <div>
+                  <label class="block text-[11px] text-slate-400 mb-1">Suscripción Predeterminada</label>
+                  <select id="cfg_realauthx_subId" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+                    <option value="715">715 - default (L1)</option>
                   </select>
                 </div>
               </div>
@@ -1227,6 +1282,10 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
             <label class="flex items-center gap-2.5 text-slate-300 hover:text-white cursor-pointer">
               <input type="checkbox" name="modal_platforms" value="keyauth" class="plat-checkbox rounded bg-slate-800 border-slate-700 text-brand-600 focus:ring-0">
               <span>KeyAuth (Elite Pro)</span>
+            </label>
+            <label class="flex items-center gap-2.5 text-slate-300 hover:text-white cursor-pointer">
+              <input type="checkbox" name="modal_platforms" value="realauthx" class="plat-checkbox rounded bg-slate-800 border-slate-700 text-brand-600 focus:ring-0">
+              <span>RealAuthX (Roblox)</span>
             </label>
           </div>
         </div>
@@ -1761,13 +1820,16 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       const pid = document.getElementById('gen_provider').value;
       const isKeyauth = pid === 'keyauth';
       const isMycheats = pid === 'mycheats';
+      const isRealAuthX = pid === 'realauthx';
       document.getElementById('gen_prefix_container').style.display = isKeyauth ? 'none' : '';
       const subCont = document.getElementById('gen_sub_container');
       if (subCont) {
-        subCont.style.display = isMycheats ? '' : 'none';
+        subCont.style.display = (isMycheats || isRealAuthX) ? '' : 'none';
       }
       if (isMycheats) {
         loadWorldCheatsSubs();
+      } else if (isRealAuthX) {
+        loadRealAuthXSubs();
       }
     }
 
@@ -1798,6 +1860,33 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       } catch (_) {}
     }
 
+    async function loadRealAuthXSubs() {
+      try {
+        if (!currentGuildId) return;
+        const res = await fetch(\`/api/guilds/\${currentGuildId}/providers/realauthx/subscriptions\`);
+        const data = await res.json();
+        if (data && data.subscriptions && data.subscriptions.length > 0) {
+          const populateSelect = (elemId) => {
+            const el = document.getElementById(elemId);
+            if (!el) return;
+            const currentVal = el.value;
+            el.innerHTML = '';
+            data.subscriptions.forEach((s) => {
+              const opt = document.createElement('option');
+              opt.value = String(s.id);
+              opt.textContent = \`\${s.id} - \${s.name}\`;
+              el.appendChild(opt);
+            });
+            if (currentVal && [...el.options].some((o) => o.value === currentVal)) {
+              el.value = currentVal;
+            }
+          };
+          populateSelect('gen_sub_id');
+          populateSelect('cfg_realauthx_subId');
+        }
+      } catch (_) {}
+    }
+
     async function submitFastGen(e) {
       e.preventDefault();
       const providerId = document.getElementById('gen_provider').value;
@@ -1805,7 +1894,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       const count = parseInt(document.getElementById('gen_count').value || '1', 10);
       const prefix = (document.getElementById('gen_prefix').value || '').trim();
       const note = (document.getElementById('gen_note').value || '').trim();
-      const subId = providerId === 'mycheats' ? (document.getElementById('gen_sub_id')?.value || null) : null;
+      const subId = (providerId === 'mycheats' || providerId === 'realauthx') ? (document.getElementById('gen_sub_id')?.value || null) : null;
 
       const btn = document.getElementById('btn-submit-gen');
       btn.disabled = true;
@@ -1853,11 +1942,12 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         };
 
         // Páginas Web Habilitadas en este Servidor
-        const enabledP = cfg.enabledProviders || ['bypass', 'bypass_uid', 'mycheats', 'keyauth'];
+        const enabledP = cfg.enabledProviders || ['bypass', 'bypass_uid', 'mycheats', 'keyauth', 'realauthx'];
         setCheck('plat_check_bypass', enabledP.includes('bypass'));
         setCheck('plat_check_bypass_uid', enabledP.includes('bypass_uid'));
         setCheck('plat_check_mycheats', enabledP.includes('mycheats'));
         setCheck('plat_check_keyauth', enabledP.includes('keyauth'));
+        setCheck('plat_check_realauthx', enabledP.includes('realauthx'));
         updateGeneratorProviderOptions(enabledP);
         updateModalResellerPlatforms(enabledP);
 
@@ -1893,6 +1983,10 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         setVal('cfg_mycheats_password', prov.mycheats?.password || '');
         setVal('cfg_mycheats_appId', prov.mycheats?.appId || '');
         setVal('cfg_mycheats_subId', prov.mycheats?.defaultSubId || '');
+        setVal('cfg_realauthx_username', prov.realauthx?.username || '');
+        setVal('cfg_realauthx_password', prov.realauthx?.password || '');
+        setVal('cfg_realauthx_appId', prov.realauthx?.appId || '');
+        setVal('cfg_realauthx_subId', prov.realauthx?.defaultSubId || '715');
 
         // Nombres y Descripciones de Páginas
         const meta = cfg.providersMetadata || {};
@@ -1905,6 +1999,8 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         setVal('cfg_meta_mycheats_desc', meta.mycheats?.desc || 'Cuentas de usuario');
         setVal('cfg_meta_keyauth_name', meta.keyauth?.name || 'KeyAuth (Elite Pro)');
         setVal('cfg_meta_keyauth_desc', meta.keyauth?.desc || 'Licencias oficiales');
+        setVal('cfg_meta_realauthx_name', meta.realauthx?.name || 'RealAuthX (Roblox)');
+        setVal('cfg_meta_realauthx_desc', meta.realauthx?.desc || 'Licencias Roblox');
 
         // Plantilla de Entrega Personalizable
         const tmpl = cfg.customTemplate || {};
@@ -2058,11 +2154,12 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         keyauth: meta.keyauth?.name || 'KeyAuth (Elite Pro)',
         bypass: meta.bypass?.name || 'Bypass APK',
         bypass_uid: meta.bypass_uid?.name || 'Bypass UID (Auto ON)',
-        mycheats: meta.mycheats?.name || 'WorldCheats (Panel VIP)'
+        mycheats: meta.mycheats?.name || 'WorldCheats (Panel VIP)',
+        realauthx: meta.realauthx?.name || 'RealAuthX (Roblox)',
       };
 
       const curVal = select.value;
-      const valid = enabledList && enabledList.length > 0 ? enabledList : ['keyauth', 'bypass', 'bypass_uid', 'mycheats'];
+      const valid = enabledList && enabledList.length > 0 ? enabledList : ['keyauth', 'bypass', 'bypass_uid', 'mycheats', 'realauthx'];
       
       let html = '';
       valid.forEach(pid => {
@@ -2081,7 +2178,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
     }
 
     function updateModalResellerPlatforms(enabledList) {
-      const valid = enabledList && enabledList.length > 0 ? enabledList : ['keyauth', 'bypass', 'bypass_uid', 'mycheats'];
+      const valid = enabledList && enabledList.length > 0 ? enabledList : ['keyauth', 'bypass', 'bypass_uid', 'mycheats', 'realauthx'];
       const checkboxes = document.querySelectorAll('.plat-checkbox');
       checkboxes.forEach(cb => {
         const parentLabel = cb.closest('label');
@@ -2200,6 +2297,10 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
           name: document.getElementById('cfg_meta_keyauth_name').value.trim(),
           desc: document.getElementById('cfg_meta_keyauth_desc').value.trim(),
         },
+        realauthx: {
+          name: document.getElementById('cfg_meta_realauthx_name').value.trim(),
+          desc: document.getElementById('cfg_meta_realauthx_desc').value.trim(),
+        },
       };
 
       try {
@@ -2217,6 +2318,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         if (document.getElementById('plat_check_bypass_uid')?.checked) enabledP.push('bypass_uid');
         if (document.getElementById('plat_check_mycheats')?.checked) enabledP.push('mycheats');
         if (document.getElementById('plat_check_keyauth')?.checked) enabledP.push('keyauth');
+        if (document.getElementById('plat_check_realauthx')?.checked) enabledP.push('realauthx');
         updateGeneratorProviderOptions(enabledP);
         updateTemplatePreview();
       } catch (err) {
@@ -2366,6 +2468,12 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
           password: document.getElementById('cfg_mycheats_password').value.trim(),
           appId: document.getElementById('cfg_mycheats_appId').value.trim(),
           defaultSubId: document.getElementById('cfg_mycheats_subId').value.trim(),
+        },
+        realauthx: {
+          username: document.getElementById('cfg_realauthx_username').value.trim(),
+          password: document.getElementById('cfg_realauthx_password').value.trim(),
+          appId: document.getElementById('cfg_realauthx_appId').value.trim(),
+          defaultSubId: document.getElementById('cfg_realauthx_subId').value.trim(),
         }
       };
 

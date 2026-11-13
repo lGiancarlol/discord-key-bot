@@ -10,10 +10,11 @@ const PROVIDER_METADATA = {
   bypass_uid: { name: 'Bypass UID (Auto ON)', desc: 'Licencias con UID ON', icon: '🛡️' },
   mycheats: { name: 'WorldCheats (Panel VIP)', desc: 'Cuentas de usuario', icon: '👤' },
   keyauth: { name: 'KeyAuth (Elite Pro)', desc: 'Licencias oficiales', icon: '🔑' },
+  realauthx: { name: 'RealAuthX (Roblox)', desc: 'Licencias Roblox', icon: '🎮' },
 };
 
 function createPanelPayload(guildId = null, db = null) {
-  let enabled = ['bypass', 'bypass_uid', 'mycheats', 'keyauth'];
+  let enabled = ['bypass', 'bypass_uid', 'mycheats', 'keyauth', 'realauthx'];
   let embedColor = 0x00d2d3; // Cian luminoso por defecto
 
   if (guildId && db) {

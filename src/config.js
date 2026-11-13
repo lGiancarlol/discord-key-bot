@@ -68,5 +68,18 @@ module.exports = {
       supportsHwidReset: true,
       supportsDelete: true,
     },
+    realauthx: {
+      id: 'realauthx',
+      name: 'RealAuthX (Roblox)',
+      description: 'Panel RealAuthX de licencias para Roblox',
+      baseUrl: process.env.REALAUTHX_BASE_URL || 'https://www.realauthx.com',
+      username: process.env.REALAUTHX_USER || 'GianAdmin1',
+      password: process.env.REALAUTHX_PASS || 'GianAdmin2',
+      appId: process.env.REALAUTHX_APP_ID || '521',
+      defaultSubId: process.env.REALAUTHX_DEFAULT_SUB_ID || '715',
+      maxDays: 90,
+      supportsHwidReset: true,
+      supportsDelete: true,
+    },
   },
 };

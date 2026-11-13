@@ -2424,6 +2424,9 @@ client.on('interactionCreate', async (interaction) => {
         if (rawTarget.startsWith('mycheats_')) {
           chosenSubId = rawTarget.replace('mycheats_', '');
           providerId = 'mycheats';
+        } else if (rawTarget.startsWith('realauthx_')) {
+          chosenSubId = rawTarget.replace('realauthx_', '');
+          providerId = 'realauthx';
         }
         const provider = providerManager.getForGuild(providerId, gId, db);
 

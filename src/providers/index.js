@@ -2,6 +2,7 @@ const BypassProvider = require('./BypassProvider');
 const BypassUidProvider = require('./BypassUidProvider');
 const MyCheatsProvider = require('./MyCheatsProvider');
 const KeyAuthProvider = require('./KeyAuthProvider');
+const RealAuthXProvider = require('./RealAuthXProvider');
 const config = require('../config');
 
 class ProviderManager {
@@ -23,6 +24,9 @@ class ProviderManager {
     }
     if (config.providers.keyauth) {
       this.providers.set('keyauth', new KeyAuthProvider(config.providers.keyauth));
+    }
+    if (config.providers.realauthx) {
+      this.providers.set('realauthx', new RealAuthXProvider(config.providers.realauthx));
     }
   }
 
@@ -76,6 +80,7 @@ class ProviderManager {
     else if (id === 'bypass_uid') instance = new BypassUidProvider(mergedConfig);
     else if (id === 'mycheats') instance = new MyCheatsProvider(mergedConfig);
     else if (id === 'keyauth') instance = new KeyAuthProvider(mergedConfig);
+    else if (id === 'realauthx') instance = new RealAuthXProvider(mergedConfig);
     else instance = this.get(id);
 
     if (instance) {
@@ -109,6 +114,7 @@ class ProviderManager {
       { id: 'bypass', name: 'Bypass APK (172.96.172.132)' },
       { id: 'mycheats', name: 'WorldCheats (new.mycheats.net)' },
       { id: 'keyauth', name: 'KeyAuth (Elite Pro)' },
+      { id: 'realauthx', name: 'RealAuthX (Roblox)' },
     ];
 
     const results = {};

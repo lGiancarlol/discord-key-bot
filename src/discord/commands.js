@@ -87,7 +87,7 @@ const commands = [
         .addStringOption((opt) =>
           opt
             .setName('plataformas')
-            .setDescription('Plataformas separadas por coma: bypass, bypass_uid, mycheats, keyauth o all')
+            .setDescription('Plataformas separadas por coma: bypass, bypass_uid, mycheats, keyauth, realauthx o all')
             .setRequired(false)
         )
     )
@@ -180,7 +180,7 @@ const commands = [
         .addStringOption((opt) =>
           opt
             .setName('plataformas')
-            .setDescription('Plataformas separadas por coma: bypass, mycheats, keyauth, all')
+            .setDescription('Plataformas separadas por coma: bypass, bypass_uid, mycheats, keyauth, realauthx, all')
             .setRequired(true)
         )
     )
