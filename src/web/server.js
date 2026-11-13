@@ -270,36 +270,42 @@ function createWebServer(client) {
     res.json(enriched);
   });
 
-  // 3. Crear / Asignar Revendedor
+  // 3. Crear / Asignar / Modificar Revendedor
   app.post('/api/guilds/:guildId/resellers', requireAuth, requireGuildAccess(client, db), async (req, res) => {
-    const { userId, days, platforms, dailyLimit } = req.body;
-    if (!userId || !days) {
+    const { userId, days, platforms, dailyLimit, isAbsolute = false, mode = 'create' } = req.body;
+    if (!userId || days === undefined || days === null) {
       return res.status(400).json({ error: 'Faltan parámetros requeridos (userId, days).' });
     }
 
     const cleanUser = String(userId).replace(/[^0-9]/g, '');
     const numDays = parseInt(days, 10);
-    if (isNaN(numDays) || numDays <= 0) {
+    if (isNaN(numDays) || numDays < 0) {
       return res.status(400).json({ error: 'Días inválidos.' });
     }
 
     const limitNum = dailyLimit !== undefined && dailyLimit !== null && dailyLimit !== '' ? parseInt(dailyLimit, 10) : 0;
     const addedBy = req.user.username || 'Panel Web';
-    const result = req.guildDb.setReseller(cleanUser, numDays, platforms, addedBy, limitNum);
+    const isEditMode = mode === 'edit' || isAbsolute === true;
+    const result = req.guildDb.setReseller(cleanUser, numDays, platforms, addedBy, limitNum, isEditMode);
 
     // Auditoría
     const opTag = req.user.username || 'Web Admin';
+    const auditTitle = isEditMode ? '[ADMINISTRACIÓN] Modificación de Revendedor' : '[ADMINISTRACIÓN] Asignación de Revendedor';
+    const auditTimeLabel = isEditMode
+      ? (numDays === 0 ? 'Sin cambios (duración conservada)' : `${numDays} días desde hoy`)
+      : `+${numDays} días`;
+
     await logToGuildAdminChannel(
       client,
       req.params.guildId,
       new EmbedBuilder()
-        .setColor(0x16a34a)
-        .setTitle('[ADMINISTRACIÓN] Asignación de Revendedor')
+        .setColor(isEditMode ? 0x3b82f6 : 0x16a34a)
+        .setTitle(auditTitle)
         .addFields(
           { name: 'Operador', value: `${opTag} (Panel Web)`, inline: true },
           { name: 'Rango Operador', value: 'Administrador Web', inline: true },
-          { name: 'Revendedor Asignado', value: `<@${cleanUser}>`, inline: true },
-          { name: 'Tiempo Otorgado', value: `+${numDays} días`, inline: true },
+          { name: 'Revendedor', value: `<@${cleanUser}>`, inline: true },
+          { name: 'Tiempo Configurado', value: auditTimeLabel, inline: true },
           { name: 'Días Restantes', value: `${result.daysLeft} días`, inline: true },
           { name: 'Límite Diario', value: limitNum > 0 ? `${limitNum} keys/día` : 'Sin límite (Ilimitado)', inline: true },
           { name: 'Plataformas', value: result.allowedProviders.join(', '), inline: false }

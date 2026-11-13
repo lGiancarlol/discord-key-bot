@@ -701,10 +701,12 @@ class Database {
     };
   }
 
-  setReseller(userId, days, allowedProviders = [], addedBy = 'Admin', dailyLimit = 0, guildId) {
+  setReseller(userId, days, allowedProviders = [], addedBy = 'Admin', dailyLimit = 0, guildId, isAbsolute = false) {
     // Si guildId vino en el argumento dailyLimit por sobrecarga
     let actualGuildId = guildId;
     let actualLimit = Number(dailyLimit) || 0;
+    let actualAbsolute = isAbsolute === true;
+
     if (typeof dailyLimit === 'string' && dailyLimit.length > 10 && !guildId) {
       actualGuildId = dailyLimit;
       actualLimit = 0;
@@ -714,17 +716,31 @@ class Database {
     const current = this.getReseller(userId, actualGuildId);
     let newExpiresTime;
 
+    const numDays = Number(days);
+
     if (current && !current.isExpired) {
-      newExpiresTime = new Date(current.expiresAt).getTime() + (Number(days) * 24 * 60 * 60 * 1000);
+      if (numDays === 0) {
+        // Conservar exactamente la fecha de expiración que ya tenía (sin agregar días)
+        newExpiresTime = new Date(current.expiresAt).getTime();
+      } else if (actualAbsolute) {
+        // Fijar exactamente N días a partir de hoy (no acumular)
+        newExpiresTime = Date.now() + (numDays * 24 * 60 * 60 * 1000);
+      } else {
+        // Modo acumulativo (+N días a los restantes)
+        newExpiresTime = new Date(current.expiresAt).getTime() + (numDays * 24 * 60 * 60 * 1000);
+      }
     } else {
-      newExpiresTime = Date.now() + (Number(days) * 24 * 60 * 60 * 1000);
+      newExpiresTime = Date.now() + (Math.max(1, numDays) * 24 * 60 * 60 * 1000);
     }
+
+    const enabledList = this.getEnabledProviders(actualGuildId);
+    const defaultProviders = enabledList.length > 0 ? enabledList : ['bypass', 'bypass_uid', 'mycheats', 'keyauth', 'realauthx'];
 
     gData.resellers[userId] = {
       expiresAt: new Date(newExpiresTime).toISOString(),
       allowedProviders: Array.isArray(allowedProviders) && allowedProviders.length > 0 
         ? allowedProviders 
-        : ['bypass', 'bypass_uid', 'mycheats', 'keyauth'],
+        : defaultProviders,
       maxDays: 30,
       dailyLimit: actualLimit > 0 ? actualLimit : 0,
       dailyUsage: current && gData.resellers[userId]?.dailyUsage ? gData.resellers[userId].dailyUsage : {},
@@ -1213,7 +1229,7 @@ class Database {
       isBotAdmin: (userId) => this.isBotAdmin(userId, gId),
       getBotAdmins: () => this.getBotAdmins(gId),
       getReseller: (userId) => this.getReseller(userId, gId),
-      setReseller: (userId, days, allowedProviders, addedBy, dailyLimit) => this.setReseller(userId, days, allowedProviders, addedBy, dailyLimit, gId),
+      setReseller: (userId, days, allowedProviders, addedBy, dailyLimit, isAbsolute) => this.setReseller(userId, days, allowedProviders, addedBy, dailyLimit, gId, isAbsolute),
       removeReseller: (userId) => this.removeReseller(userId, gId),
       getAllResellers: () => this.getAllResellers(gId),
       getUserPermissions: (member, cfg) => this.getUserPermissions(member, cfg, gId),

@@ -1243,14 +1243,21 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       </div>
 
       <form id="formResellerModal" onsubmit="submitResellerModal(event)" class="space-y-4">
+        <input type="hidden" id="modal_reseller_mode" value="create">
         <div>
           <label class="block text-xs font-medium text-slate-400 mb-1 uppercase tracking-wider">ID de Usuario o Mención de Discord</label>
           <input type="text" id="modal_reseller_user" required placeholder="446349128650326021 o @usuario" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-slate-200 focus:outline-none focus:border-brand-500">
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1 uppercase tracking-wider">Días a Añadir</label>
-          <input type="number" id="modal_reseller_days" value="30" min="1" max="365" required class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
+          <label id="modal_reseller_days_label" class="block text-xs font-medium text-slate-400 mb-1 uppercase tracking-wider">Días de Membresía</label>
+          <div id="modal_reseller_keep_container" style="display: none;" class="mb-2 p-2.5 bg-slate-900 border border-slate-800 rounded-lg">
+            <label class="flex items-center gap-2 text-xs text-brand-400 font-medium cursor-pointer">
+              <input type="checkbox" id="modal_reseller_keep_days" checked onchange="toggleKeepDays(this)" class="rounded bg-slate-800 border-slate-700 text-brand-600 focus:ring-0">
+              <span id="modal_reseller_keep_days_text">Conservar días restantes actuales (sin alterar tiempo)</span>
+            </label>
+          </div>
+          <input type="number" id="modal_reseller_days" value="30" min="0" max="365" required class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
         </div>
 
         <div>
@@ -1481,7 +1488,11 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       document.getElementById('modalResellerTitle').innerText = 'Asignar Membresía a Revendedor';
       document.getElementById('modal_reseller_user').value = '';
       document.getElementById('modal_reseller_user').readOnly = false;
+      document.getElementById('modal_reseller_mode').value = 'create';
+      document.getElementById('modal_reseller_days_label').innerText = 'Días de Membresía';
+      document.getElementById('modal_reseller_keep_container').style.display = 'none';
       document.getElementById('modal_reseller_days').value = '30';
+      document.getElementById('modal_reseller_days').disabled = false;
       document.getElementById('modal_reseller_limit').value = '0';
       document.getElementById('check_plat_all').checked = true;
       toggleAllPlatforms(document.getElementById('check_plat_all'));
@@ -1492,9 +1503,19 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       const r = allResellersCache.find(x => x.userId === userId);
       if (!r) return;
       document.getElementById('modalResellerTitle').innerText = 'Modificar Membresía de Revendedor';
+      document.getElementById('modal_reseller_mode').value = 'edit';
       document.getElementById('modal_reseller_user').value = userId;
       document.getElementById('modal_reseller_user').readOnly = true;
-      document.getElementById('modal_reseller_days').value = r.daysLeft > 0 ? r.daysLeft : 30;
+
+      const daysLeft = r.daysLeft > 0 ? r.daysLeft : 0;
+      document.getElementById('modal_reseller_keep_container').style.display = 'block';
+      const keepCb = document.getElementById('modal_reseller_keep_days');
+      keepCb.checked = true;
+      document.getElementById('modal_reseller_keep_days_text').innerText = 'Conservar días restantes actuales (' + daysLeft + ' días)';
+      document.getElementById('modal_reseller_days_label').innerText = 'Días Totales desde hoy';
+      document.getElementById('modal_reseller_days').value = daysLeft;
+      document.getElementById('modal_reseller_days').disabled = true;
+
       document.getElementById('modal_reseller_limit').value = r.dailyLimit || 0;
       
       document.querySelectorAll('.plat-checkbox').forEach(cb => {
@@ -1502,6 +1523,16 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       });
       document.getElementById('check_plat_all').checked = false;
       document.getElementById('modalReseller').classList.remove('hidden');
+    }
+
+    function toggleKeepDays(cb) {
+      const daysInput = document.getElementById('modal_reseller_days');
+      if (cb.checked) {
+        daysInput.disabled = true;
+      } else {
+        daysInput.disabled = false;
+        daysInput.focus();
+      }
     }
 
     function closeModalReseller() {
@@ -1516,9 +1547,18 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
 
     async function submitResellerModal(e) {
       e.preventDefault();
+      const mode = document.getElementById('modal_reseller_mode').value || 'create';
       const rawUser = document.getElementById('modal_reseller_user').value.trim();
       const userId = rawUser.replace(/[^0-9]/g, '');
-      const days = parseInt(document.getElementById('modal_reseller_days').value, 10);
+      const keepChecked = mode === 'edit' && document.getElementById('modal_reseller_keep_days')?.checked;
+      
+      let days = 0;
+      if (mode === 'create') {
+        days = parseInt(document.getElementById('modal_reseller_days').value, 10);
+      } else {
+        days = keepChecked ? 0 : parseInt(document.getElementById('modal_reseller_days').value, 10);
+      }
+
       const dailyLimit = parseInt(document.getElementById('modal_reseller_limit').value || '0', 10);
       
       const platforms = [];
@@ -1535,7 +1575,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         const res = await fetch(\`/api/guilds/\${currentGuildId}/resellers\`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, days, platforms, dailyLimit })
+          body: JSON.stringify({ userId, days, platforms, dailyLimit, mode, isAbsolute: mode === 'edit' })
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
