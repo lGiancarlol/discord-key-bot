@@ -61,39 +61,45 @@ async function exchangeDiscordCode(code, redirectUri, client, db) {
   const user = userRes.data;
   const rawGuilds = guildsRes.data || [];
 
-  // Verificar si es el Dueño Principal
+  // Verificar si es el Dueño Principal del Bot o tiene permiso explícito por ID
   const isMasterOwner = user.id === config.discord.ownerId;
+  const isWebAllowed = isMasterOwner || db.isWebUserAllowed(user.id);
+
+  // Si NO es el Dueño Maestro y NO está en la lista de acceso web autorizada
+  if (!isWebAllowed) {
+    return {
+      authorized: false,
+      user,
+      error: `Acceso restringido: El panel web está reservado exclusivamente para el Dueño del Bot y cuentas autorizadas por ID. Tu ID de Discord es: ${user.id}. Solicita autorización al dueño (<@${config.discord.ownerId}>) para poder ingresar.`,
+    };
+  }
 
   // Filtrar servidores donde tiene acceso
   const authorizedGuilds = [];
   const botGuilds = client?.guilds?.cache || new Map();
 
   for (const [guildId, guild] of botGuilds.entries()) {
-    const isServerOwner = guild.ownerId === user.id;
-    const isBotAdmin = db?.forGuild(guildId)?.isBotAdmin(user.id);
+    // Solo el Dueño Maestro o usuarios expresamente autorizados para este servidor
+    const hasGuildAccess = isMasterOwner || db.canUserAccessGuildWeb(user.id, guildId);
 
-    // Acceso estricto por servidor:
-    // 1. El Dueño Maestro siempre tiene acceso a todos los servidores
-    // 2. El Dueño de este servidor de Discord
-    // 3. Usuario explícitamente añadido como admin del bot EN ESTE SERVIDOR
-    if (isMasterOwner || isServerOwner || isBotAdmin) {
+    if (hasGuildAccess) {
       authorizedGuilds.push({
         id: guild.id,
         name: guild.name,
         icon: guild.icon,
         iconUrl: guild.iconURL ? guild.iconURL() : null,
-        owner: isServerOwner || isMasterOwner,
+        owner: isMasterOwner,
         isMaster: isMasterOwner,
       });
     }
   }
 
-  // Si no es el dueño ni tiene permiso en ningún servidor
-  if (!isMasterOwner && authorizedGuilds.length === 0) {
+  // Si no tiene acceso a ningún servidor
+  if (authorizedGuilds.length === 0) {
     return {
       authorized: false,
       user,
-      error: `Tu cuenta de Discord (@${user.username} • ID: ${user.id}) no tiene permisos de administrador. Debes pedirle al Dueño (<@${config.discord.ownerId}>) que te autorice para poder acceder al panel.`,
+      error: `Tu cuenta de Discord (@${user.username} • ID: ${user.id}) tiene acceso web aprobado pero no tiene ningún servidor asignado actualmente. Contacta al Dueño (<@${config.discord.ownerId}>).`,
     };
   }
 
@@ -172,15 +178,12 @@ function requireGuildAccess(client, db) {
       return next();
     }
 
-    // Verificar si el usuario es admin en este servidor específico
-    const isBotAdmin = db.forGuild(guildId).isBotAdmin(userId);
-    const isOwner = client?.guilds.cache.get(guildId)?.ownerId === userId;
-
-    if (!isBotAdmin && !isOwner) {
+    // Verificar si el usuario está explícitamente autorizado en la whitelist web para este servidor
+    if (!db.canUserAccessGuildWeb(userId, guildId)) {
       if (req.path.startsWith('/api/')) {
-        return res.status(403).json({ error: 'No tienes permisos de administrador en este servidor.' });
+        return res.status(403).json({ error: 'Acceso denegado: No tienes autorización para acceder a este servidor en el panel web.' });
       }
-      return res.status(403).send('<h1>403 Prohibido</h1><p>No tienes permisos de administración en este servidor. Contacta al dueño.</p><a href="/servers">Volver</a>');
+      return res.status(403).send('<h1>403 Prohibido</h1><p>Acceso denegado. Solo el Dueño del Bot puede concederte acceso a este servidor mediante tu ID de Discord.</p><a href="/servers">Volver</a>');
     }
 
     req.guildDb = db.forGuild(guildId);

@@ -118,6 +118,13 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       <button onclick="switchTab('settings')" id="tab-btn-settings" class="tab-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2 transition whitespace-nowrap text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
         <i class="fa-solid fa-gears"></i> Configuración
       </button>
+      ${(user.isMasterOwner || user.id === config.discord.ownerId) ? `
+      <button onclick="switchTab('webaccess')" id="tab-btn-webaccess" class="tab-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2 transition whitespace-nowrap text-purple-400 hover:text-purple-200 hover:bg-purple-950/40 border border-purple-800/40">
+        <i class="fa-solid fa-shield-halved"></i>
+        <span>Acceso Web</span>
+        <span class="px-1.5 py-0.5 text-[9px] font-bold rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 uppercase">Dueño</span>
+      </button>
+      ` : ''}
     </div>
   </nav>
 
@@ -1055,6 +1062,91 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       </div>
     </div>
 
+    ${(user.isMasterOwner || user.id === config.discord.ownerId) ? `
+    <!-- ── TAB 8: ACCESO WEB (WHITELIST EXCLUSIVA DEL DUEÑO) ── -->
+    <div id="tab-webaccess" class="tab-content hidden space-y-8">
+      <!-- Encabezado de Seguridad -->
+      <div class="bg-gradient-to-r from-purple-950/40 via-slate-900 to-slate-900 border border-purple-900/40 rounded-3xl p-6 sm:p-8 relative overflow-hidden">
+        <div class="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div class="space-y-2 max-w-2xl">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs font-semibold">
+              <i class="fa-solid fa-crown text-amber-400"></i> Área Exclusiva del Dueño del Bot
+            </div>
+            <h2 class="text-2xl font-extrabold text-white tracking-tight">Control Maestro de Acceso Web por ID</h2>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              El panel web opera bajo política de <strong>denegación absoluta por defecto</strong>. Ningún usuario (incluso si es dueño de un servidor de Discord) puede acceder al panel a menos que su ID de Discord esté autorizada aquí por ti.
+            </p>
+          </div>
+          <div class="p-4 rounded-2xl bg-slate-950/80 border border-purple-900/30 text-xs text-slate-400 space-y-1">
+            <div class="font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-shield-check text-emerald-400"></i> Tu ID de Dueño:
+            </div>
+            <div class="font-mono text-purple-300 bg-purple-950/50 px-2 py-1 rounded border border-purple-800/40 select-all">${user.id}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Formulario para Autorizar Nueva ID -->
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl">
+        <h3 class="text-base font-bold text-white flex items-center gap-2 mb-4 border-b border-slate-800 pb-3">
+          <i class="fa-solid fa-user-plus text-purple-400"></i> Autorizar Nueva Cuenta de Discord
+        </h3>
+        <form onsubmit="addWebAccessUser(event)" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+          <div class="md:col-span-1">
+            <label class="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">ID de Usuario Discord *</label>
+            <input type="text" id="web_new_userId" placeholder="Ej: 446349128650326021" required class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-slate-200 focus:outline-none focus:border-purple-500">
+          </div>
+          <div class="md:col-span-1">
+            <label class="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Servidores Permitidos</label>
+            <select id="web_new_guildId" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-purple-500">
+              <option value="*">🌐 Todos los Servidores (Global)</option>
+              ${availableGuilds.map(g => `<option value="${g.id}">🛡️ ${g.name}</option>`).join('')}
+            </select>
+          </div>
+          <div class="md:col-span-1">
+            <label class="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Nota / Motivo</label>
+            <input type="text" id="web_new_note" placeholder="Ej: Administrador Servidor 1" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-purple-500">
+          </div>
+          <div class="md:col-span-1">
+            <button type="submit" id="btn-add-webuser" class="w-full flex items-center justify-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-medium text-sm rounded-xl transition shadow-lg shadow-purple-600/20">
+              <i class="fa-solid fa-key text-xs"></i>
+              <span>Autorizar Acceso Web</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Tabla de Cuentas Autorizadas -->
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+          <h3 class="text-base font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-list-check text-purple-400"></i> Cuentas Autorizadas para Iniciar Sesión (<span id="webaccess-count">0</span>)
+          </h3>
+          <button onclick="loadWebAccessUsers()" class="px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition flex items-center gap-1.5">
+            <i class="fa-solid fa-rotate text-[11px]"></i> Actualizar
+          </button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="border-b border-slate-800/80 text-slate-400 uppercase text-[10px] tracking-wider">
+                <th class="py-3 px-3">Usuario Discord</th>
+                <th class="py-3 px-3">ID de Discord</th>
+                <th class="py-3 px-3">Rango / Acceso</th>
+                <th class="py-3 px-3">Servidores Asignados</th>
+                <th class="py-3 px-3">Nota</th>
+                <th class="py-3 px-3 text-right">Acción</th>
+              </tr>
+            </thead>
+            <tbody id="webaccess-table-body" class="divide-y divide-slate-800/40 text-slate-300">
+              <tr><td colspan="6" class="py-6 text-center text-slate-500">Cargando lista de acceso web...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    ` : ''}
   </main>
 
   <!-- ── MODAL: ASIGNAR / EDITAR REVENDEDOR ── -->
@@ -1156,6 +1248,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       if (tabId === 'keys') loadKeys();
       if (tabId === 'settings') loadSettings();
       if (tabId === 'admins') loadAdmins();
+      if (tabId === 'webaccess') loadWebAccessUsers();
     }
 
     // Toast Notificación
@@ -1717,6 +1810,9 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         setVal('cfg_branding_color', color);
         setVal('cfg_branding_color_picker', color);
         setVal('cfg_branding_prefix', branding.defaultPrefix || 'VIP');
+        const defaultPrefixVal = branding.defaultPrefix || 'VIP';
+        const genPrefEl = document.getElementById('gen_prefix');
+        if (genPrefEl && !genPrefEl.value) genPrefEl.value = defaultPrefixVal;
 
         // Cargar listas desplegables de Discord
         loadDiscordChannels();
@@ -2350,6 +2446,114 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
     loadStats();
     loadHealth();
     handleGenProviderChange();
+    // ── GESTIÓN DE ACCESO WEB POR ID (SOLO DUEÑO) ──
+    async function loadWebAccessUsers() {
+      const tbody = document.getElementById('webaccess-table-body');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-slate-500">Cargando cuentas autorizadas...</td></tr>';
+
+      try {
+        const res = await fetch('/api/web-access/users');
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        const users = data.users || [];
+        const countEl = document.getElementById('webaccess-count');
+        if (countEl) countEl.innerText = users.length;
+
+        if (users.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-slate-500">No hay cuentas adicionales autorizadas. Solo tú tienes acceso.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = users.map(u => {
+          const isMaster = u.isMasterOwner;
+          const badge = isMaster
+            ? '<span class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 font-bold"><i class="fa-solid fa-crown text-amber-400 mr-1"></i> Dueño del Bot</span>'
+            : '<span class="px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20 font-medium"><i class="fa-solid fa-user-check text-purple-400 mr-1"></i> Autorizado por ID</span>';
+
+          const srvBadge = (u.guilds || []).includes('*')
+            ? '<span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">🌐 Todos (Global)</span>'
+            : (u.guilds || []).map(g => '<span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">' + g + '</span>').join(' ');
+
+          const deleteBtn = u.canRevoke
+            ? '<button data-uid="' + u.userId + '" onclick="revokeWebAccess(this.dataset.uid)" class="px-2.5 py-1 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg transition font-medium"><i class="fa-solid fa-trash-can mr-1"></i> Revocar</button>'
+            : '<span class="text-[11px] text-slate-600 italic">No revocable</span>';
+
+          return '<tr class="hover:bg-slate-800/20 transition">' +
+            '<td class="py-3 px-3 font-semibold text-white">' + (u.tag || 'Usuario') + '</td>' +
+            '<td class="py-3 px-3 font-mono text-purple-300 select-all">' + u.userId + '</td>' +
+            '<td class="py-3 px-3">' + badge + '</td>' +
+            '<td class="py-3 px-3">' + srvBadge + '</td>' +
+            '<td class="py-3 px-3 text-slate-400">' + (u.note || '<span class="text-slate-600 italic">Sin nota</span>') + '</td>' +
+            '<td class="py-3 px-3 text-right">' + deleteBtn + '</td>' +
+          '</tr>';
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-red-400">Error al cargar usuarios: ' + err.message + '</td></tr>';
+      }
+    }
+
+    async function addWebAccessUser(e) {
+      e.preventDefault();
+      const userId = (document.getElementById('web_new_userId')?.value || '').trim();
+      const guildId = document.getElementById('web_new_guildId')?.value || '*';
+      const note = (document.getElementById('web_new_note')?.value || '').trim();
+
+      if (!userId || !/^\d{17,20}$/.test(userId)) {
+        return showToast('Por favor introduce una ID de Discord válida (17 a 20 números).', 'error');
+      }
+
+      const btn = document.getElementById('btn-add-webuser');
+      const prevHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
+      }
+
+      try {
+        const res = await fetch('/api/web-access/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            guilds: guildId === '*' ? ['*'] : [guildId],
+            note
+          })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        showToast('Cuenta de Discord autorizada exitosamente.', 'success');
+        document.getElementById('web_new_userId').value = '';
+        document.getElementById('web_new_note').value = '';
+        loadWebAccessUsers();
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = prevHtml;
+        }
+      }
+    }
+
+    async function revokeWebAccess(userId) {
+      if (!confirm('¿Estás seguro de revocar el acceso web a la ID ' + userId + '? Ya no podrá iniciar sesión en este panel.')) return;
+
+      try {
+        const res = await fetch('/api/web-access/users/' + userId, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        showToast('Acceso web revocado con éxito.', 'success');
+        loadWebAccessUsers();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
   </script>
 </body>
 </html>`;

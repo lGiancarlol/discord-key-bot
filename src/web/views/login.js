@@ -64,7 +64,7 @@ function renderLoginPage(errorMessage = '') {
         <div class="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 text-center">
           <p class="text-xs text-slate-400 leading-relaxed">
             <i class="fa-solid fa-lock text-brand-400 mr-1.5"></i>
-            Acceso restringido. Solo el <strong>Dueño del Servidor</strong> o <strong>Administradores autorizados</strong> pueden acceder.
+            Acceso privado y restringido. Solo el <strong>Dueño del Bot</strong> y cuentas de Discord autorizadas expresamente por ID tienen acceso a este panel.
           </p>
         </div>
       </div>

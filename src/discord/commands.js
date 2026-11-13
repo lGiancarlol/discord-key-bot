@@ -205,6 +205,60 @@ const commands = [
     .setName('stats')
     .setDescription('Ver estadísticas de keys generadas y estado de las APIs')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  new SlashCommandBuilder()
+    .setName('prefijo')
+    .setDescription('Ver o cambiar el prefijo predeterminado de keys/cuentas en este servidor')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addStringOption((opt) =>
+      opt
+        .setName('nuevo')
+        .setDescription('Nuevo prefijo predeterminado (ej: VIP, PRO, CLIENTE)')
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('acceso-web')
+    .setDescription('[DUEÑO] Controlar qué cuentas de Discord pueden ingresar al panel web')
+    .addSubcommand((sub) =>
+      sub
+        .setName('autorizar')
+        .setDescription('Autorizar una ID de Discord para acceder al panel web')
+        .addStringOption((opt) =>
+          opt
+            .setName('usuario_id')
+            .setDescription('ID numérica de Discord del usuario (17 a 20 dígitos)')
+            .setRequired(true)
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName('servidor')
+            .setDescription('ID del servidor asignado o escribe "all" para todos los servidores')
+            .setRequired(false)
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName('nota')
+            .setDescription('Nota o motivo de autorización')
+            .setRequired(false)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('revocar')
+        .setDescription('Revocar el acceso web a una ID de Discord')
+        .addStringOption((opt) =>
+          opt
+            .setName('usuario_id')
+            .setDescription('ID numérica de Discord del usuario a revocar')
+            .setRequired(true)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('lista')
+        .setDescription('Ver lista de IDs de Discord autorizadas para acceder a la web')
+    ),
 ];
 
 module.exports = { commands };

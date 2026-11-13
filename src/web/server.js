@@ -401,6 +401,9 @@ function createWebServer(client) {
     const { providerId, days = 30, count = 1, prefix = '', note = '' } = req.body;
     const { guildId } = req.params;
 
+    const defaultPrefix = req.guildDb.getDefaultPrefix();
+    const targetPrefix = (prefix && String(prefix).trim()) ? String(prefix).trim() : defaultPrefix;
+
     const provider = providerManager.getForGuild(providerId, guildId, db);
     if (!provider) {
       return res.status(404).json({ error: 'Proveedor no disponible.' });
@@ -445,7 +448,7 @@ function createWebServer(client) {
       const items = await provider.createKey({
         days: Number(days),
         count: Number(count),
-        prefix,
+        prefix: targetPrefix,
         note,
       });
 
@@ -462,7 +465,7 @@ function createWebServer(client) {
           providerId,
           key: keyValue,
           days: itemDays,
-          prefix,
+          prefix: targetPrefix,
           note,
         });
       }
@@ -598,8 +601,11 @@ function createWebServer(client) {
 
   // 12. Guardar Configuración de Servidor
   app.post('/api/guilds/:guildId/config', requireAuth, requireGuildAccess(client, db), async (req, res) => {
-    const { channels, customTemplate, providersConfig, branding, enabledProviders, providersMetadata } = req.body;
-    const updated = req.guildDb.updateConfig({ channels, customTemplate, providersConfig, branding, enabledProviders, providersMetadata });
+    let { channels, customTemplate, providersConfig, branding, enabledProviders, providersMetadata, defaultPrefix } = req.body;
+    if (defaultPrefix) {
+      branding = { ...(branding || {}), defaultPrefix: String(defaultPrefix).trim().toUpperCase() };
+    }
+    const updated = req.guildDb.updateConfig({ channels, customTemplate, providersConfig, branding, enabledProviders, providersMetadata, defaultPrefix });
     providerManager.invalidateGuild(req.params.guildId);
 
     req.guildDb.recordWebAuditLog({
@@ -955,6 +961,72 @@ function createWebServer(client) {
     }
 
     res.json({ success: true, removed });
+  });
+
+  // ── CONTROL MAESTRO DE ACCESO WEB POR ID (SOLO DUEÑO DEL BOT) ──
+
+  app.get('/api/web-access/users', requireAuth, (req, res) => {
+    const isMasterOwner = req.session.user.isMasterOwner || req.session.user.id === config.discord.ownerId;
+    if (!isMasterOwner) {
+      return res.status(403).json({ error: 'Exclusivo del Dueño Maestro del Bot.' });
+    }
+    res.json({
+      users: db.getWebAccessUsers(),
+      masterOwnerId: config.discord.ownerId,
+    });
+  });
+
+  app.post('/api/web-access/users', requireAuth, async (req, res) => {
+    const isMasterOwner = req.session.user.isMasterOwner || req.session.user.id === config.discord.ownerId;
+    if (!isMasterOwner) {
+      return res.status(403).json({ error: 'Exclusivo del Dueño Maestro del Bot.' });
+    }
+
+    const { userId, tag, guilds, note } = req.body;
+    if (!userId || !/^\d{17,20}$/.test(String(userId).trim())) {
+      return res.status(400).json({ error: 'ID de usuario de Discord inválida. Debe ser numérica de 17 a 20 dígitos.' });
+    }
+
+    let resolvedTag = tag ? String(tag).trim() : '';
+    if (!resolvedTag) {
+      try {
+        const u = await client.users.fetch(String(userId).trim());
+        if (u) resolvedTag = u.tag || u.username;
+      } catch {
+        resolvedTag = `Usuario ${userId}`;
+      }
+    }
+
+    try {
+      const added = db.addWebUser(userId, {
+        tag: resolvedTag,
+        guilds: Array.isArray(guilds) && guilds.length > 0 ? guilds : ['*'],
+        note: note ? String(note).trim() : '',
+        addedBy: req.session.user.id,
+      });
+
+      return res.json({ success: true, user: added });
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/web-access/users/:targetUserId', requireAuth, (req, res) => {
+    const isMasterOwner = req.session.user.isMasterOwner || req.session.user.id === config.discord.ownerId;
+    if (!isMasterOwner) {
+      return res.status(403).json({ error: 'Exclusivo del Dueño Maestro del Bot.' });
+    }
+
+    const { targetUserId } = req.params;
+    try {
+      const removed = db.removeWebUser(targetUserId);
+      if (!removed) {
+        return res.status(404).json({ error: 'Usuario no encontrado en la lista de acceso web.' });
+      }
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
   });
 
   return app;

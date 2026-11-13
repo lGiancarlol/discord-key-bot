@@ -5,7 +5,7 @@ const {
   ActionRowBuilder,
 } = require('discord.js');
 
-function getCreateKeyModal(providerId = 'bypass', maxDays = 30) {
+function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = '') {
   // Modal específico para KeyAuth (Elite Pro): Funciona por stock precargado
   if (providerId === 'keyauth') {
     const modal = new ModalBuilder()
@@ -95,6 +95,10 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30) {
     .setStyle(TextInputStyle.Short)
     .setMaxLength(15)
     .setRequired(false);
+
+  if (defaultPrefix) {
+    prefixInput.setValue(String(defaultPrefix).trim());
+  }
 
   const noteInput = new TextInputBuilder()
     .setCustomId('input_note')

@@ -6,6 +6,7 @@ const DB_DIR = path.join(__dirname, '..', 'data');
 const GUILDS_DIR = path.join(DB_DIR, 'guilds');
 const BACKUPS_DIR = path.join(DB_DIR, 'backups');
 const OLD_DB_FILE = path.join(DB_DIR, 'db.json');
+const WEB_ACCESS_FILE = path.join(DB_DIR, 'web_access.json');
 
 const DEFAULT_PROVIDER_METADATA = {
   bypass: { name: 'Bypass APK', desc: 'Emisión de licencias', icon: '⚡' },
@@ -85,6 +86,7 @@ class Database {
     this.guilds = {};
     this.primaryGuildId = config.discord.guildId || 'default';
     this.floodMap = new Map(); // Anti-Flood Map: `${guildId}:${userId}` -> { timestamps: number[], cooldownUntil: number }
+    this.webAccess = { allowedUsers: {} };
     this.init();
   }
 
@@ -103,6 +105,9 @@ class Database {
     if (!fs.existsSync(BACKUPS_DIR)) {
       fs.mkdirSync(BACKUPS_DIR, { recursive: true });
     }
+
+    // 0. Cargar permisos de acceso web exclusivo por ID
+    this.loadWebAccess();
 
     // 1. Migración de archivo db.json previo a la guild principal
     const primaryFile = path.join(GUILDS_DIR, `${this.primaryGuildId}.json`);
@@ -386,6 +391,10 @@ class Database {
     if (newConfig.branding) {
       gData.branding = { ...(gData.branding || {}), ...newConfig.branding };
     }
+    if (newConfig.defaultPrefix !== undefined) {
+      if (!gData.branding) gData.branding = {};
+      gData.branding.defaultPrefix = (newConfig.defaultPrefix || 'VIP').trim().toUpperCase();
+    }
     if (newConfig.customTemplate) {
       gData.customTemplate = { ...(gData.customTemplate || {}), ...newConfig.customTemplate };
     }
@@ -502,6 +511,137 @@ class Database {
   getBotAdmins(guildId) {
     const gData = this.getGuildData(guildId);
     return gData.botAdmins || [];
+  }
+
+  // ── PREFIJO PREDETERMINADO POR SERVIDOR ──
+
+  getDefaultPrefix(guildId) {
+    const gData = this.getGuildData(guildId);
+    return (gData.branding?.defaultPrefix || 'VIP').trim();
+  }
+
+  setDefaultPrefix(guildId, prefix) {
+    const gData = this.getGuildData(guildId);
+    if (!gData.branding) gData.branding = {};
+    gData.branding.defaultPrefix = (prefix || 'VIP').trim().toUpperCase();
+    this.saveGuild(guildId);
+    return gData.branding.defaultPrefix;
+  }
+
+  // ── CONTROL MAESTRO DE ACCESO WEB POR ID (WHITELIST PRIVADA) ──
+
+  loadWebAccess() {
+    try {
+      if (fs.existsSync(WEB_ACCESS_FILE)) {
+        const raw = fs.readFileSync(WEB_ACCESS_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        this.webAccess = {
+          allowedUsers: parsed.allowedUsers || {},
+        };
+      } else {
+        this.webAccess = { allowedUsers: {} };
+        this.saveWebAccess();
+      }
+    } catch (err) {
+      console.error('[Database] Error al cargar web_access.json:', err);
+      this.webAccess = { allowedUsers: {} };
+    }
+  }
+
+  saveWebAccess() {
+    try {
+      this.atomicWriteFile(WEB_ACCESS_FILE, JSON.stringify(this.webAccess, null, 2));
+    } catch (err) {
+      console.error('[Database] Error al guardar web_access.json:', err);
+    }
+  }
+
+  getWebAccessUsers() {
+    const list = [];
+    const masterOwnerId = String(config.discord.ownerId || '446349128650326021').trim();
+
+    list.push({
+      userId: masterOwnerId,
+      tag: 'Dueño Maestro del Bot',
+      guilds: ['*'],
+      note: 'Propietario del Bot (Acceso Total)',
+      addedAt: '2026-01-01T00:00:00.000Z',
+      addedBy: 'SYSTEM',
+      isMasterOwner: true,
+      canRevoke: false,
+    });
+
+    for (const [uid, item] of Object.entries(this.webAccess.allowedUsers || {})) {
+      if (uid === masterOwnerId) continue;
+      list.push({
+        userId: uid,
+        tag: item.tag || `Usuario ${uid}`,
+        guilds: Array.isArray(item.guilds) && item.guilds.length > 0 ? item.guilds : ['*'],
+        note: item.note || '',
+        addedAt: item.addedAt || null,
+        addedBy: item.addedBy || 'Owner',
+        isMasterOwner: false,
+        canRevoke: true,
+      });
+    }
+
+    return list;
+  }
+
+  isWebUserAllowed(userId) {
+    if (!userId) return false;
+    const uid = String(userId).trim();
+    const masterOwnerId = String(config.discord.ownerId || '446349128650326021').trim();
+    if (uid === masterOwnerId) return true;
+    return Boolean(this.webAccess.allowedUsers && this.webAccess.allowedUsers[uid]);
+  }
+
+  canUserAccessGuildWeb(userId, guildId) {
+    if (!userId) return false;
+    const uid = String(userId).trim();
+    const masterOwnerId = String(config.discord.ownerId || '446349128650326021').trim();
+    if (uid === masterOwnerId) return true;
+
+    const userEntry = this.webAccess.allowedUsers?.[uid];
+    if (!userEntry) return false;
+
+    const guilds = Array.isArray(userEntry.guilds) && userEntry.guilds.length > 0 ? userEntry.guilds : ['*'];
+    if (guilds.includes('*')) return true;
+    return guilds.includes(String(guildId));
+  }
+
+  addWebUser(userId, { tag = '', guilds = ['*'], note = '', addedBy = 'Owner' } = {}) {
+    const uid = String(userId).trim();
+    if (!/^\d{17,20}$/.test(uid)) {
+      throw new Error('La ID de usuario debe ser numérica de Discord (17 a 20 dígitos).');
+    }
+    if (!this.webAccess.allowedUsers) this.webAccess.allowedUsers = {};
+
+    const cleanGuilds = Array.isArray(guilds) && guilds.length > 0 ? guilds : ['*'];
+    this.webAccess.allowedUsers[uid] = {
+      userId: uid,
+      tag: tag ? String(tag).trim() : `Usuario ${uid}`,
+      guilds: cleanGuilds,
+      note: note ? String(note).trim() : '',
+      addedAt: new Date().toISOString(),
+      addedBy: String(addedBy),
+    };
+    this.saveWebAccess();
+    return this.webAccess.allowedUsers[uid];
+  }
+
+  removeWebUser(userId) {
+    const uid = String(userId).trim();
+    const masterOwnerId = String(config.discord.ownerId || '446349128650326021').trim();
+    if (uid === masterOwnerId) {
+      throw new Error('No puedes revocar el acceso web al Dueño Maestro del Bot.');
+    }
+    if (this.webAccess.allowedUsers && this.webAccess.allowedUsers[uid]) {
+      delete this.webAccess.allowedUsers[uid];
+      this.saveWebAccess();
+      return true;
+    }
+    return false;
   }
 
   // ── GESTIÓN DE REVENDEDORES POR TIEMPO Y CUOTAS DIARIAS (POR GUILD) ──
@@ -1064,6 +1204,8 @@ class Database {
       getProviderMetadata: (pId) => this.getProviderMetadata(gId, pId),
       getAllProvidersMetadata: () => this.getAllProvidersMetadata(gId),
       setProviderMetadata: (pId, meta) => this.setProviderMetadata(gId, pId, meta),
+      getDefaultPrefix: () => this.getDefaultPrefix(gId),
+      setDefaultPrefix: (prefix) => this.setDefaultPrefix(gId, prefix),
       recordWebAuditLog: (params) => this.recordWebAuditLog(gId, params),
       getWebAuditLogs: (limit) => this.getWebAuditLogs(gId, limit),
       cloneConfigFrom: (sourceGuildId, operatorTag) => this.cloneConfig(sourceGuildId, gId, operatorTag),

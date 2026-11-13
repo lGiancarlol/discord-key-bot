@@ -1233,6 +1233,138 @@ client.on('interactionCreate', async (interaction) => {
 
         return interaction.editReply({ embeds: [embed] });
       }
+
+      // /prefijo (Ver o cambiar prefijo predeterminado por servidor)
+      if (commandName === 'prefijo') {
+        const isOwner = interaction.user.id === config.discord.ownerId || interaction.guild?.ownerId === interaction.user.id;
+        const isAdmin = isOwner || db.forGuild(interaction.guildId).isBotAdmin(interaction.user.id);
+        const gId = interaction.guildId || config.discord.guildId;
+
+        const nuevo = interaction.options.getString('nuevo');
+        if (!nuevo) {
+          const currentPrefix = db.forGuild(gId).getDefaultPrefix();
+          const embed = new EmbedBuilder()
+            .setColor(0x3b82f6)
+            .setTitle(`🏷️ Prefijo Predeterminado de ${interaction.guild?.name || 'Servidor'}`)
+            .setDescription(`El prefijo predeterminado actual en este servidor es: **\`${currentPrefix}\`**\n\nTodas las claves y cuentas generadas en este servidor llevarán este prefijo automáticamente si no se especifica uno diferente.`)
+            .setFooter({ text: 'Usa /prefijo nuevo:<prefijo> para cambiarlo' })
+            .setTimestamp();
+          return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        if (!isAdmin) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** Solo los Administradores de este servidor pueden cambiar el prefijo.',
+            ephemeral: true,
+          });
+        }
+
+        const saved = db.forGuild(gId).setDefaultPrefix(nuevo);
+        const embed = new EmbedBuilder()
+          .setColor(0x22c55e)
+          .setTitle('✅ Prefijo Predeterminado Actualizado')
+          .setDescription(`El nuevo prefijo predeterminado para **${interaction.guild?.name || 'este servidor'}** es: **\`${saved}\`**.\n\nA partir de ahora, todas las claves emitidas por botones, comandos o panel web en este servidor usarán este prefijo por defecto.`)
+          .setFooter({ text: 'Sistema Multi-Servidor • Auth Gateway' })
+          .setTimestamp();
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+      }
+
+      // /acceso-web (Control Maestro de Acceso Web por ID - SOLO DUEÑO DEL BOT)
+      if (commandName === 'acceso-web') {
+        const isMasterOwner = interaction.user.id === config.discord.ownerId;
+        if (!isMasterOwner) {
+          return interaction.reply({
+            content: `⛔ **Acceso Denegado:** Este comando está restringido exclusivamente al **Dueño Maestro del Bot** (<@${config.discord.ownerId}>). Nadie más puede autorizar el ingreso al panel web.`,
+            ephemeral: true,
+          });
+        }
+
+        const sub = interaction.options.getSubcommand();
+
+        if (sub === 'autorizar') {
+          const userId = interaction.options.getString('usuario_id')?.trim();
+          const servidor = interaction.options.getString('servidor')?.trim() || 'all';
+          const nota = interaction.options.getString('nota')?.trim() || '';
+
+          if (!/^\d{17,20}$/.test(userId)) {
+            return interaction.reply({
+              content: '❌ **ID inválida:** La ID de usuario de Discord debe contener entre 17 y 20 dígitos numéricos.',
+              ephemeral: true,
+            });
+          }
+
+          let tag = `Usuario ${userId}`;
+          try {
+            const u = await client.users.fetch(userId);
+            if (u) tag = u.tag || u.username;
+          } catch (_) {}
+
+          const guilds = (servidor.toLowerCase() === 'all' || servidor === '*') ? ['*'] : [servidor];
+          const added = db.addWebUser(userId, {
+            tag,
+            guilds,
+            note: nota,
+            addedBy: interaction.user.id,
+          });
+
+          const embed = new EmbedBuilder()
+            .setColor(0x8b5cf6)
+            .setTitle('🔐 Acceso Web Autorizado')
+            .setDescription(`Se ha concedido acceso al Panel Web a <@${userId}> (\`${tag}\`).`)
+            .addFields(
+              { name: 'ID de Discord', value: `\`${userId}\``, inline: true },
+              { name: 'Servidores Permitidos', value: guilds.includes('*') ? '🌐 Todos los Servidores (Global)' : `ID: \`${servidor}\``, inline: true },
+              { name: 'Nota / Motivo', value: nota || 'Sin nota especificada', inline: false }
+            )
+            .setFooter({ text: 'Control Maestro de Acceso Web • Auth Gateway' })
+            .setTimestamp();
+
+          return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        if (sub === 'revocar') {
+          const userId = interaction.options.getString('usuario_id')?.trim();
+          try {
+            const removed = db.removeWebUser(userId);
+            if (removed) {
+              return interaction.reply({
+                content: `✅ Se ha revocado el acceso al panel web para el usuario con ID \`${userId}\`. Ya no podrá iniciar sesión en la web.`,
+                ephemeral: true,
+              });
+            } else {
+              return interaction.reply({
+                content: `ℹ️ El usuario con ID \`${userId}\` no estaba en la lista de acceso web.`,
+                ephemeral: true,
+              });
+            }
+          } catch (err) {
+            return interaction.reply({
+              content: `❌ ${err.message}`,
+              ephemeral: true,
+            });
+          }
+        }
+
+        if (sub === 'lista') {
+          const users = db.getWebAccessUsers();
+          const lines = users.map((u) => {
+            const crown = u.isMasterOwner ? '👑 **Dueño del Bot**' : '🔑 **Operador Autorizado**';
+            const srv = u.guilds.includes('*') ? 'Todos los servidores' : `${u.guilds.length} servidor(es)`;
+            const noteText = u.note ? ` • *${u.note}*` : '';
+            return `${crown}: <@${u.userId}> (\`${u.userId}\`)\n   └ Acceso: ${srv}${noteText}`;
+          });
+
+          const embed = new EmbedBuilder()
+            .setColor(0x8b5cf6)
+            .setTitle('🔐 Lista Blanca de Acceso al Panel Web')
+            .setDescription(`Únicamente las siguientes cuentas de Discord tienen permiso para iniciar sesión en la web:\n\n${lines.join('\n\n')}`)
+            .setFooter({ text: 'Solo tú puedes autorizar o revocar accesos web' })
+            .setTimestamp();
+
+          return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+      }
     }
 
     // 2. BOTONES DEL PANEL
@@ -1410,8 +1542,9 @@ client.on('interactionCreate', async (interaction) => {
 
         // Si solo tiene acceso a 1 plataforma, abrir modal directo
         if (perms.allowedProviders.length === 1) {
+          const defaultPrefix = db.forGuild(interaction.guildId).getDefaultPrefix();
           return interaction.showModal(
-            getCreateKeyModal(perms.allowedProviders[0], perms.maxDays)
+            getCreateKeyModal(perms.allowedProviders[0], perms.maxDays, defaultPrefix)
           );
         }
 
@@ -1688,8 +1821,9 @@ client.on('interactionCreate', async (interaction) => {
             ephemeral: true,
           });
         }
+        const defaultPrefix = db.forGuild(interaction.guildId).getDefaultPrefix();
         return interaction.showModal(
-          getCreateKeyModal(selectedProvider, perms.maxDays)
+          getCreateKeyModal(selectedProvider, perms.maxDays, defaultPrefix)
         );
       }
 
@@ -2333,11 +2467,14 @@ client.on('interactionCreate', async (interaction) => {
 
         await interaction.deferReply({ ephemeral: true });
 
+        const serverPrefix = db.forGuild(gId).getDefaultPrefix();
+        const finalPrefix = (prefix && prefix.trim()) ? prefix.trim() : (providerId === 'mycheats' ? (serverPrefix || 'USER') : serverPrefix);
+
         try {
           const items = await provider.createKey({
             days,
             count,
-            prefix: prefix || (providerId === 'mycheats' ? 'USER' : 'VIP'),
+            prefix: finalPrefix,
             note,
           });
 
@@ -2354,7 +2491,7 @@ client.on('interactionCreate', async (interaction) => {
               providerId,
               key: keyValue,
               days: itemDays,
-              prefix,
+              prefix: finalPrefix,
               note,
             }, gId);
           }
