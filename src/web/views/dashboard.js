@@ -502,6 +502,79 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         </div>
       </div>
 
+      <!-- Fila 0: Páginas Web / Plataformas Habilitadas en este Servidor -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <div>
+            <h3 class="text-base font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-globe text-cyan-400"></i> Páginas Web Habilitadas en este Servidor
+            </h3>
+            <p class="text-xs text-slate-400 mt-0.5">Elige qué páginas funcionarán en este servidor. Las páginas desactivadas no aparecerán en el panel de Discord ni en los menús de revendedores de este servidor.</p>
+          </div>
+          <button onclick="publishDiscordPanel('panel')" type="button" class="text-xs text-slate-300 hover:text-white px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition flex items-center gap-1.5 w-fit">
+            <i class="fa-solid fa-arrows-rotate"></i> Actualizar Panel Discord
+          </button>
+        </div>
+
+        <form id="formEnabledPlatforms" onsubmit="saveEnabledPlatforms(event)" class="space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            <!-- Bypass APK -->
+            <label class="flex items-start gap-3 p-4 bg-slate-950/70 border border-slate-800 hover:border-slate-700 rounded-xl cursor-pointer transition group">
+              <input type="checkbox" id="plat_check_bypass" name="enabled_platforms" value="bypass" class="mt-1 rounded bg-slate-800 border-slate-700 text-brand-600 focus:ring-0">
+              <div>
+                <span class="block text-sm font-bold text-white group-hover:text-brand-400 transition flex items-center gap-1.5">
+                  ⚡ Bypass APK
+                </span>
+                <span class="text-[11px] text-slate-400 block mt-0.5">Emisión de licencias para APK Bypass</span>
+              </div>
+            </label>
+
+            <!-- Bypass UID -->
+            <label class="flex items-start gap-3 p-4 bg-slate-950/70 border border-slate-800 hover:border-slate-700 rounded-xl cursor-pointer transition group">
+              <input type="checkbox" id="plat_check_bypass_uid" name="enabled_platforms" value="bypass_uid" class="mt-1 rounded bg-slate-800 border-slate-700 text-brand-600 focus:ring-0">
+              <div>
+                <span class="block text-sm font-bold text-white group-hover:text-brand-400 transition flex items-center gap-1.5">
+                  🛡️ Bypass UID (Auto ON)
+                </span>
+                <span class="text-[11px] text-slate-400 block mt-0.5">Licencias con UID activado automáticamente</span>
+              </div>
+            </label>
+
+            <!-- WorldCheats -->
+            <label class="flex items-start gap-3 p-4 bg-slate-950/70 border border-slate-800 hover:border-slate-700 rounded-xl cursor-pointer transition group">
+              <input type="checkbox" id="plat_check_mycheats" name="enabled_platforms" value="mycheats" class="mt-1 rounded bg-slate-800 border-slate-700 text-brand-600 focus:ring-0">
+              <div>
+                <span class="block text-sm font-bold text-white group-hover:text-brand-400 transition flex items-center gap-1.5">
+                  👤 WorldCheats (Panel VIP)
+                </span>
+                <span class="text-[11px] text-slate-400 block mt-0.5">Cuentas VIP con usuario y contraseña</span>
+              </div>
+            </label>
+
+            <!-- KeyAuth -->
+            <label class="flex items-start gap-3 p-4 bg-slate-950/70 border border-slate-800 hover:border-slate-700 rounded-xl cursor-pointer transition group">
+              <input type="checkbox" id="plat_check_keyauth" name="enabled_platforms" value="keyauth" class="mt-1 rounded bg-slate-800 border-slate-700 text-brand-600 focus:ring-0">
+              <div>
+                <span class="block text-sm font-bold text-white group-hover:text-brand-400 transition flex items-center gap-1.5">
+                  🔑 KeyAuth (Elite Pro)
+                </span>
+                <span class="text-[11px] text-slate-400 block mt-0.5">Licencias oficiales KeyAuth con inventario</span>
+              </div>
+            </label>
+
+          </div>
+
+          <div class="flex items-center justify-between pt-2">
+            <span class="text-xs text-slate-500 italic">* Debes dejar al menos una página activada.</span>
+            <button type="submit" id="btnSavePlatforms" class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-sm rounded-xl transition shadow-lg shadow-cyan-600/20 flex items-center gap-2">
+              <i class="fa-solid fa-floppy-disk text-xs"></i>
+              <span>Guardar Páginas de este Servidor</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
       <!-- Fila 1: Canales de Discord y Credenciales Exclusivas -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <!-- Canales de Discord -->
@@ -1475,6 +1548,15 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         const res = await fetch(\`/api/guilds/\${currentGuildId}/config\`);
         const cfg = await res.json();
         
+        // Páginas Web Habilitadas en este Servidor
+        const enabledP = cfg.enabledProviders || ['bypass', 'bypass_uid', 'mycheats', 'keyauth'];
+        if (document.getElementById('plat_check_bypass')) document.getElementById('plat_check_bypass').checked = enabledP.includes('bypass');
+        if (document.getElementById('plat_check_bypass_uid')) document.getElementById('plat_check_bypass_uid').checked = enabledP.includes('bypass_uid');
+        if (document.getElementById('plat_check_mycheats')) document.getElementById('plat_check_mycheats').checked = enabledP.includes('mycheats');
+        if (document.getElementById('plat_check_keyauth')) document.getElementById('plat_check_keyauth').checked = enabledP.includes('keyauth');
+        updateGeneratorProviderOptions(enabledP);
+        updateModalResellerPlatforms(enabledP);
+
         // Canales y Alertas
         document.getElementById('cfg_panelChannelId').value = cfg.channels?.panelChannelId || '';
         document.getElementById('cfg_adminPanelChannelId').value = cfg.channels?.adminPanelChannelId || '';
@@ -1601,6 +1683,86 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         btn.disabled = false;
         btn.innerHTML = prevHtml;
       }
+    }
+
+    async function saveEnabledPlatforms(e) {
+      e.preventDefault();
+      const checkboxes = document.querySelectorAll('input[name="enabled_platforms"]:checked');
+      const enabledProviders = Array.from(checkboxes).map(cb => cb.value);
+
+      if (enabledProviders.length === 0) {
+        showToast('Debes seleccionar al menos una página para este servidor.', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('btnSavePlatforms');
+      const prevHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Guardando...';
+      }
+
+      try {
+        const res = await fetch(\`/api/guilds/\${currentGuildId}/config\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabledProviders })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        showToast('Páginas web actualizadas correctamente.');
+        updateGeneratorProviderOptions(enabledProviders);
+        updateModalResellerPlatforms(enabledProviders);
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = prevHtml;
+        }
+      }
+    }
+
+    function updateGeneratorProviderOptions(enabledList) {
+      const select = document.getElementById('gen_provider');
+      if (!select) return;
+
+      const providerMap = {
+        keyauth: 'KeyAuth (Elite Pro)',
+        bypass: 'Bypass APK',
+        bypass_uid: 'Bypass UID (Auto ON)',
+        mycheats: 'WorldCheats (Panel VIP)'
+      };
+
+      const curVal = select.value;
+      const valid = enabledList && enabledList.length > 0 ? enabledList : ['keyauth', 'bypass', 'bypass_uid', 'mycheats'];
+      
+      let html = '';
+      valid.forEach(pid => {
+        if (providerMap[pid]) {
+          html += '<option value="' + pid + '">' + providerMap[pid] + '</option>';
+        }
+      });
+
+      select.innerHTML = html;
+      if (valid.includes(curVal)) {
+        select.value = curVal;
+      } else if (valid.length > 0) {
+        select.value = valid[0];
+      }
+      handleGenProviderChange();
+    }
+
+    function updateModalResellerPlatforms(enabledList) {
+      const valid = enabledList && enabledList.length > 0 ? enabledList : ['keyauth', 'bypass', 'bypass_uid', 'mycheats'];
+      const checkboxes = document.querySelectorAll('.plat-checkbox');
+      checkboxes.forEach(cb => {
+        const parentLabel = cb.closest('label');
+        if (parentLabel) {
+          parentLabel.style.display = valid.includes(cb.value) ? '' : 'none';
+        }
+      });
     }
 
     async function submitCloneConfig() {

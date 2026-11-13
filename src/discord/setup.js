@@ -180,13 +180,13 @@ async function autoSetupGuildChannels(guild, client, db, operatorTag = 'Sistema'
 
   // 7. Publicar Paneles Automáticamente en los nuevos canales
   try {
-    await panelChannel.send(createPanelPayload());
+    await panelChannel.send(createPanelPayload(guild.id, db));
   } catch (err) {
     console.warn(`[AutoSetup] Aviso al publicar panel en ${panelChannel.name}:`, err.message);
   }
 
   try {
-    await adminPanelChannel.send(createAdminPanelPayload());
+    await adminPanelChannel.send(createAdminPanelPayload(guild.id, db));
   } catch (err) {
     console.warn(`[AutoSetup] Aviso al publicar admin panel en ${adminPanelChannel.name}:`, err.message);
   }

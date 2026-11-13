@@ -5,20 +5,50 @@ const {
   ButtonStyle,
 } = require('discord.js');
 
-function createPanelPayload() {
+const PROVIDER_METADATA = {
+  bypass: { name: 'Bypass APK', desc: 'Emisión de licencias', icon: '⚡' },
+  bypass_uid: { name: 'Bypass UID (Auto ON)', desc: 'Licencias con UID ON', icon: '🛡️' },
+  mycheats: { name: 'WorldCheats (Panel VIP)', desc: 'Cuentas de usuario', icon: '👤' },
+  keyauth: { name: 'KeyAuth (Elite Pro)', desc: 'Licencias oficiales', icon: '🔑' },
+};
+
+function createPanelPayload(guildId = null, db = null) {
+  let enabled = ['bypass', 'bypass_uid', 'mycheats', 'keyauth'];
+  let embedColor = 0x00d2d3; // Cian luminoso por defecto
+
+  if (guildId && db) {
+    if (typeof db.getEnabledProviders === 'function') {
+      enabled = db.getEnabledProviders(guildId);
+    }
+    const cfg = db.getGuildConfig ? db.getGuildConfig(guildId) : null;
+    if (cfg?.branding?.embedColor) {
+      const parsedColor = parseInt(cfg.branding.embedColor.replace('#', ''), 16);
+      if (!isNaN(parsedColor)) embedColor = parsedColor;
+    }
+  }
+
+  const platformLines = enabled
+    .map((pid) => {
+      const meta = PROVIDER_METADATA[pid];
+      if (!meta) return null;
+      return `│ ${meta.icon} **${meta.name}** ▸ ${meta.desc}`;
+    })
+    .filter(Boolean);
+
+  const platformBox = platformLines.length > 0
+    ? '╭─ **PLATAFORMAS DISPONIBLES** ───────────╮\n' +
+      platformLines.join('\n') + '\n' +
+      '╰─────────────────────────────────────────╯'
+    : '*(No hay plataformas habilitadas para este servidor aún)*';
+
   const embed = new EmbedBuilder()
-    .setColor(0x00d2d3) // Cian luminoso
+    .setColor(embedColor)
     .setTitle('🛡️ SISTEMA DE LICENCIAS & ACCESOS')
     .setDescription(
       '```ansi\n\u001b[1;36m● SISTEMA OPERATIVO & EN LÍNEA (AUTH API v2.4)\u001b[0m\n```\n' +
         'Bienvenido al portal interactivo de administración y distribución de licencias.\n' +
         'Utiliza los controles inferiores para emitir y gestionar tus accesos de forma instantánea y segura.\n\n' +
-        '╭─ **PLATAFORMAS DISPONIBLES** ───────────╮\n' +
-        '│ ⚡ **Bypass APK**              ▸ Emisión de licencias\n' +
-        '│ 🛡️ **Bypass UID (Auto ON)**    ▸ Licencias con UID ON\n' +
-        '│ 👤 **WorldCheats (Panel VIP)** ▸ Cuentas de usuario\n' +
-        '│ 🔑 **KeyAuth (Elite Pro)**     ▸ Licencias oficiales\n' +
-        '╰─────────────────────────────────────────╯'
+        platformBox
     )
     .setFooter({
       text: 'Desarrollado por Gian • Auth Cloud Gateway',
@@ -60,9 +90,19 @@ function createPanelPayload() {
 }
 
 // Panel de Control Exclusivo para Administradores
-function createAdminPanelPayload() {
+function createAdminPanelPayload(guildId = null, db = null) {
+  let embedColor = 0xf1c40f; // Dorado VIP por defecto
+
+  if (guildId && db) {
+    const cfg = db.getGuildConfig ? db.getGuildConfig(guildId) : null;
+    if (cfg?.branding?.embedColor) {
+      const parsedColor = parseInt(cfg.branding.embedColor.replace('#', ''), 16);
+      if (!isNaN(parsedColor)) embedColor = parsedColor;
+    }
+  }
+
   const embed = new EmbedBuilder()
-    .setColor(0xf1c40f) // Dorado VIP
+    .setColor(embedColor)
     .setTitle('👑 PANEL DE CONTROL ADMINISTRATIVO')
     .setDescription(
       '```ansi\n\u001b[1;33m★ CENTRO DE CONTROL & GESTIÓN DE REVENDEDORES\u001b[0m\n```\n' +
@@ -75,6 +115,7 @@ function createAdminPanelPayload() {
         '│ 🔍 **Info Revendedor**     ▸ Consultar días restantes\n' +
         '│ 📋 **Lista General**       ▸ Todos los revendedores\n' +
         '│ 📊 **Estado & Stock**      ▸ Ver inventario de claves\n' +
+        '│ 🌐 **Configurar Páginas**  ▸ Elegir webs activas en este sv\n' +
         '╰───────────────────────────────────────────╯\n' +
         '💡 *Al asignar o modificar permisos, se abrirá un menú con casillas (checks) para elegir las plataformas con un solo clic.*'
     )
@@ -124,7 +165,12 @@ function createAdminPanelPayload() {
       .setCustomId('admin_btn_view_stock')
       .setLabel('Ver Stock & Estado')
       .setEmoji('📊')
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('admin_btn_config_platforms')
+      .setLabel('Configurar Páginas')
+      .setEmoji('🌐')
+      .setStyle(ButtonStyle.Primary)
   );
 
   return { embeds: [embed], components: [row1, row2, row3] };

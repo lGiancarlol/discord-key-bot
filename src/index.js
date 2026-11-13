@@ -165,6 +165,56 @@ async function logToGuildAdminChannel(target, gId, embed) {
   return logToAdminChannel(embed || gId, typeof gId === 'string' ? gId : null);
 }
 
+const PROVIDER_NAMES = {
+  bypass: 'Bypass APK',
+  bypass_uid: 'Bypass UID (Auto ON)',
+  mycheats: 'WorldCheats (Panel VIP)',
+  keyauth: 'KeyAuth (Elite Pro)',
+};
+
+async function showPlatformsConfigMenu(interaction, guildId, database) {
+  const currentEnabled = database.getEnabledProviders(guildId);
+  const allProviders = [
+    { label: 'Bypass APK', value: 'bypass', description: 'Emisión de licencias Bypass' },
+    { label: 'Bypass UID (Auto ON)', value: 'bypass_uid', description: 'Licencias Bypass con UID activado' },
+    { label: 'WorldCheats (Panel VIP)', value: 'mycheats', description: 'Cuentas de usuario WorldCheats' },
+    { label: 'KeyAuth (Elite Pro)', value: 'keyauth', description: 'Licencias oficiales KeyAuth' },
+  ];
+
+  const options = allProviders.map((p) => ({
+    ...p,
+    default: currentEnabled.includes(p.value),
+  }));
+
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('select_config_platforms')
+    .setPlaceholder('Marca las páginas que funcionarán en este servidor...')
+    .setMinValues(1)
+    .setMaxValues(allProviders.length)
+    .addOptions(options);
+
+  const row = new ActionRowBuilder().addComponents(select);
+
+  const embed = new EmbedBuilder()
+    .setColor(0x2563eb)
+    .setTitle('🌐 CONFIGURACIÓN DE PÁGINAS ACTIVAS')
+    .setDescription(
+      `Selecciona a continuación qué páginas web / plataformas deseas dejar activas para **${interaction.guild?.name || 'este servidor'}**.\n\n` +
+      `Las plataformas desmarcadas **no aparecerán** en el panel de licencias, ni en la creación de revendedores, ni en la emisión de claves de este servidor.`
+    )
+    .addFields({
+      name: 'Actualmente Habilitadas:',
+      value: currentEnabled.map((p) => `• **${PROVIDER_NAMES[p] || p}**`).join('\n') || 'Ninguna',
+    })
+    .setFooter({ text: 'Sistema de Configuración Multi-Servidor' });
+
+  return interaction.reply({
+    embeds: [embed],
+    components: [row],
+    ephemeral: true,
+  });
+}
+
 // Evento Ready
 client.once(Events.ClientReady, async () => {
   console.log(`\n========================================`);
@@ -454,10 +504,10 @@ async function checkAndPostPanel(guild) {
         (m) => m.author.id === client.user.id && m.embeds.length > 0 && !m.embeds[0].title?.includes('ADMINISTRATIVO')
       );
       if (!existing) {
-        await panelChannel.send(createPanelPayload());
+        await panelChannel.send(createPanelPayload(guild.id, db));
         console.log(`[Panel] Panel de licencias publicado en el servidor ${guild.name} (${channelId}).`);
       } else {
-        await existing.edit(createPanelPayload());
+        await existing.edit(createPanelPayload(guild.id, db));
         console.log(`[Panel] Panel de licencias actualizado en el servidor ${guild.name} (${channelId}).`);
       }
     }
@@ -478,10 +528,10 @@ async function checkAndPostAdminPanel(guild) {
         (m) => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].title?.includes('ADMINISTRATIVO')
       );
       if (!existing) {
-        await adminChannel.send(createAdminPanelPayload());
+        await adminChannel.send(createAdminPanelPayload(guild.id, db));
         console.log(`[AdminPanel] Panel administrativo publicado en ${guild.name} (${channelId}).`);
       } else {
-        await existing.edit(createAdminPanelPayload());
+        await existing.edit(createAdminPanelPayload(guild.id, db));
         console.log(`[AdminPanel] Panel administrativo actualizado en ${guild.name} (${channelId}).`);
       }
     }
@@ -552,7 +602,7 @@ client.on('interactionCreate', async (interaction) => {
 
       // /panel
       if (commandName === 'panel') {
-        await interaction.channel.send(createPanelPayload());
+        await interaction.channel.send(createPanelPayload(interaction.guildId, db));
         return interaction.reply({
           content: '✅ Panel interactivo publicado con éxito.',
           ephemeral: true,
@@ -561,11 +611,23 @@ client.on('interactionCreate', async (interaction) => {
 
       // /admin-panel
       if (commandName === 'admin-panel') {
-        await interaction.channel.send(createAdminPanelPayload());
+        await interaction.channel.send(createAdminPanelPayload(interaction.guildId, db));
         return interaction.reply({
           content: '✅ Panel de control administrativo publicado con éxito.',
           ephemeral: true,
         });
+      }
+
+      // /plataformas
+      if (commandName === 'plataformas') {
+        const perms = db.getUserPermissions(interaction.member, config, interaction.guildId);
+        if (!perms.isAdmin) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** Solo administradores pueden configurar las plataformas.',
+            ephemeral: true,
+          });
+        }
+        return showPlatformsConfigMenu(interaction, interaction.guildId, db);
       }
 
       // /admin (Gestión de Administradores del Bot)
@@ -1137,6 +1199,10 @@ client.on('interactionCreate', async (interaction) => {
 
           return interaction.editReply({ embeds: [embed] });
         }
+
+        if (customId === 'admin_btn_config_platforms') {
+          return showPlatformsConfigMenu(interaction, interaction.guildId, db);
+        }
       }
 
       // GENERAR KEY
@@ -1393,7 +1459,48 @@ client.on('interactionCreate', async (interaction) => {
     // 3. SELECT MENUS
     if (interaction.isStringSelectMenu()) {
       const { customId, values, member, user } = interaction;
-      const perms = db.getUserPermissions(member, config);
+      const perms = db.getUserPermissions(member, config, interaction.guildId);
+
+      if (customId === 'select_config_platforms') {
+        if (!perms.isAdmin) {
+          return interaction.reply({
+            content: '⛔ Solo administradores pueden configurar las plataformas.',
+            ephemeral: true,
+          });
+        }
+
+        const selected = values;
+        db.setEnabledProviders(interaction.guildId, selected);
+
+        db.recordWebAuditLog(interaction.guildId, {
+          operatorTag: user.tag || user.username,
+          operatorId: user.id,
+          action: 'UPDATE_PLATFORMS',
+          details: `Plataformas actualizadas en Discord: ${selected.join(', ')}`,
+        });
+
+        const cfg = db.getGuildConfig(interaction.guildId);
+        const panelChanId = cfg.channels?.panelChannelId;
+        if (panelChanId) {
+          try {
+            const ch = await interaction.client.channels.fetch(panelChanId);
+            if (ch?.isTextBased()) {
+              const msgs = await ch.messages.fetch({ limit: 15 });
+              const existingPanel = msgs.find(m => m.author.id === interaction.client.user.id && m.embeds.some(e => e.title?.includes('SISTEMA DE LICENCIAS')));
+              if (existingPanel) {
+                await existingPanel.edit(createPanelPayload(interaction.guildId, db));
+              }
+            }
+          } catch (_) {}
+        }
+
+        const names = selected.map(p => `• **${PROVIDER_NAMES[p] || p}**`).join('\n');
+        return interaction.update({
+          content: `✅ **Páginas web actualizadas correctamente para este servidor:**\n${names}\n\n*(El panel de licencias de este servidor se ha actualizado en tiempo real).*`,
+          embeds: [],
+          components: [],
+        });
+      }
 
       if (customId === 'select_create_provider') {
         const selectedProvider = values[0];
@@ -1517,10 +1624,11 @@ client.on('interactionCreate', async (interaction) => {
         const limit = parts[6] ? parseInt(parts[6], 10) : 0;
 
         let platforms = [];
+        const guildEnabled = db.getEnabledProviders(interaction.guildId);
         if (values.includes('all')) {
-          platforms = Object.keys(config.providers);
+          platforms = guildEnabled;
         } else {
-          platforms = values;
+          platforms = values.filter((p) => guildEnabled.includes(p));
         }
 
         const res = db.setReseller(targetId, dias, platforms, user.tag, limit, interaction.guildId);
@@ -1584,16 +1692,16 @@ client.on('interactionCreate', async (interaction) => {
         const targetId = parts[4];
 
         let platforms = [];
+        const guildEnabled = db.getEnabledProviders(interaction.guildId);
         if (values.includes('all')) {
-          platforms = Object.keys(config.providers);
+          platforms = guildEnabled;
         } else {
-          platforms = values;
+          platforms = values.filter((p) => guildEnabled.includes(p));
         }
 
-        if (db.data.resellers[targetId]) {
-          db.data.resellers[targetId].allowedProviders = platforms;
-          db.data.resellers[targetId].updatedAt = new Date().toISOString();
-          db.save();
+        const currentRes = db.getReseller(targetId, interaction.guildId);
+        if (currentRes) {
+          db.forGuild(interaction.guildId).setReseller(targetId, 0, platforms, user.tag, currentRes.dailyLimit);
         }
 
         const platNames = platforms.map((pid) => config.providers[pid]?.name || pid);
@@ -1673,17 +1781,20 @@ client.on('interactionCreate', async (interaction) => {
           limit = 0;
         }
 
+        const serverEnabled = db.getEnabledProviders(interaction.guildId);
         const platformOptions = [
           {
-            label: '🌟 TODAS LAS PLATAFORMAS (Acceso Total)',
+            label: '🌟 TODAS LAS PLATAFORMAS (De este servidor)',
             value: 'all',
-            description: 'Otorga acceso a todas las plataformas',
+            description: 'Otorga acceso a las plataformas activas en este servidor',
           },
-          ...Object.entries(config.providers).map(([pid, p]) => ({
-            label: p.name,
-            value: pid,
-            description: `Habilitar acceso a ${p.name}`,
-          })),
+          ...Object.entries(config.providers)
+            .filter(([pid]) => serverEnabled.includes(pid))
+            .map(([pid, p]) => ({
+              label: p.name,
+              value: pid,
+              description: `Habilitar acceso a ${p.name}`,
+            })),
         ];
 
         const selectRow = new ActionRowBuilder().addComponents(
@@ -1729,17 +1840,20 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
+        const serverEnabled = db.getEnabledProviders(interaction.guildId);
         const platformOptions = [
           {
-            label: '🌟 TODAS LAS PLATAFORMAS (Acceso Total)',
+            label: '🌟 TODAS LAS PLATAFORMAS (De este servidor)',
             value: 'all',
-            description: 'Otorga acceso a todas las plataformas',
+            description: 'Otorga acceso a las plataformas activas en este servidor',
           },
-          ...Object.entries(config.providers).map(([pid, p]) => ({
-            label: p.name,
-            value: pid,
-            description: `Habilitar acceso a ${p.name}`,
-          })),
+          ...Object.entries(config.providers)
+            .filter(([pid]) => serverEnabled.includes(pid))
+            .map(([pid, p]) => ({
+              label: p.name,
+              value: pid,
+              description: `Habilitar acceso a ${p.name}`,
+            })),
         ];
 
         const selectRow = new ActionRowBuilder().addComponents(

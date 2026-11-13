@@ -17,6 +17,11 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   new SlashCommandBuilder()
+    .setName('plataformas')
+    .setDescription('Configurar qué páginas / plataformas funcionan en este servidor')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  new SlashCommandBuilder()
     .setName('admin')
     .setDescription('Designar o remover Administradores del Bot')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)

@@ -594,18 +594,35 @@ function createWebServer(client) {
   });
 
   // 12. Guardar Configuración de Servidor
-  app.post('/api/guilds/:guildId/config', requireAuth, requireGuildAccess(client, db), (req, res) => {
-    const { channels, customTemplate, providersConfig, branding } = req.body;
-    const updated = req.guildDb.updateConfig({ channels, customTemplate, providersConfig, branding });
+  app.post('/api/guilds/:guildId/config', requireAuth, requireGuildAccess(client, db), async (req, res) => {
+    const { channels, customTemplate, providersConfig, branding, enabledProviders } = req.body;
+    const updated = req.guildDb.updateConfig({ channels, customTemplate, providersConfig, branding, enabledProviders });
     providerManager.invalidateGuild(req.params.guildId);
 
     req.guildDb.recordWebAuditLog({
       operatorTag: req.user.username,
       operatorId: req.user.id,
       action: 'UPDATE_CONFIG',
-      details: 'Configuración de canales, credenciales o marca actualizada.',
+      details: enabledProviders ? `Plataformas activas actualizadas: ${enabledProviders.join(', ')}` : 'Configuración de canales, credenciales o marca actualizada.',
       ip: req.ip,
     });
+
+    // Si se modificaron las plataformas activas y hay un canal de panel configurado, intentar actualizar el embed en Discord en vivo
+    if (enabledProviders) {
+      const panelChanId = updated.channels?.panelChannelId;
+      if (panelChanId) {
+        try {
+          const ch = await client.channels.fetch(panelChanId);
+          if (ch?.isTextBased()) {
+            const msgs = await ch.messages.fetch({ limit: 15 });
+            const existingPanel = msgs.find(m => m.author.id === client.user.id && m.embeds.some(e => e.title?.includes('SISTEMA DE LICENCIAS')));
+            if (existingPanel) {
+              await existingPanel.edit(createPanelPayload(req.params.guildId, db));
+            }
+          }
+        } catch (_) {}
+      }
+    }
 
     res.json({ success: true, config: updated });
   });
@@ -754,7 +771,7 @@ function createWebServer(client) {
       if (!channel || !channel.isTextBased()) {
         return res.status(404).json({ error: 'Canal de Discord no encontrado o no es de texto.' });
       }
-      await channel.send(createPanelPayload());
+      await channel.send(createPanelPayload(guildId, db));
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: `Error al publicar en Discord: ${err.message}` });
@@ -776,7 +793,7 @@ function createWebServer(client) {
       if (!channel || !channel.isTextBased()) {
         return res.status(404).json({ error: 'Canal de Discord no encontrado o no es de texto.' });
       }
-      await channel.send(createAdminPanelPayload());
+      await channel.send(createAdminPanelPayload(guildId, db));
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: `Error al publicar en Discord: ${err.message}` });

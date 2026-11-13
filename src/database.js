@@ -12,6 +12,7 @@ const getTodayKey = () => new Date().toISOString().slice(0, 10);
 const createDefaultGuildData = (guildId, guildName = '') => ({
   guildId,
   name: guildName || `Servidor ${guildId}`,
+  enabledProviders: ['bypass', 'bypass_uid', 'mycheats', 'keyauth'],
   channels: {
     panelChannelId: (guildId === config.discord.guildId ? config.discord.panelChannelId : '') || '',
     adminPanelChannelId: (guildId === config.discord.guildId ? config.discord.adminPanelChannelId : '') || '',
@@ -140,6 +141,7 @@ class Database {
             this.guilds[guildId] = {
               ...createDefaultGuildData(guildId),
               ...parsed,
+              enabledProviders: Array.isArray(parsed.enabledProviders) && parsed.enabledProviders.length > 0 ? parsed.enabledProviders : ['bypass', 'bypass_uid', 'mycheats', 'keyauth'],
               channels: { ...createDefaultGuildData(guildId).channels, ...(parsed.channels || {}) },
               branding: { ...createDefaultGuildData(guildId).branding, ...(parsed.branding || {}) },
               customTemplate: { ...createDefaultGuildData(guildId).customTemplate, ...(parsed.customTemplate || {}) },
@@ -287,6 +289,7 @@ class Database {
     return {
       guildId: gData.guildId,
       name: gData.name,
+      enabledProviders: this.getEnabledProviders(guildId),
       channels: gData.channels || {},
       branding: gData.branding || {
         embedColor: '#2563eb',
@@ -301,6 +304,23 @@ class Database {
     };
   }
 
+  getEnabledProviders(guildId) {
+    const gData = this.getGuildData(guildId);
+    if (Array.isArray(gData.enabledProviders) && gData.enabledProviders.length > 0) {
+      return gData.enabledProviders;
+    }
+    return ['bypass', 'bypass_uid', 'mycheats', 'keyauth'];
+  }
+
+  setEnabledProviders(guildId, providersArray) {
+    const gData = this.getGuildData(guildId);
+    const valid = ['bypass', 'bypass_uid', 'mycheats', 'keyauth'];
+    const filtered = (Array.isArray(providersArray) ? providersArray : []).filter((p) => valid.includes(p));
+    gData.enabledProviders = filtered.length > 0 ? filtered : valid;
+    this.saveGuild(guildId);
+    return gData.enabledProviders;
+  }
+
   updateGuildConfig(guildId, newConfig = {}) {
     const gData = this.getGuildData(guildId);
     if (newConfig.name) gData.name = newConfig.name;
@@ -312,6 +332,9 @@ class Database {
     }
     if (newConfig.customTemplate) {
       gData.customTemplate = { ...(gData.customTemplate || {}), ...newConfig.customTemplate };
+    }
+    if (newConfig.enabledProviders) {
+      this.setEnabledProviders(guildId, newConfig.enabledProviders);
     }
     if (newConfig.providersConfig) {
       gData.providersConfig = { ...gData.providersConfig, ...newConfig.providersConfig };
@@ -369,6 +392,9 @@ class Database {
 
     // Copiar marca y colores
     targetData.branding = JSON.parse(JSON.stringify(sourceData.branding || {}));
+
+    // Copiar plataformas habilitadas
+    targetData.enabledProviders = JSON.parse(JSON.stringify(sourceData.enabledProviders || ['bypass', 'bypass_uid', 'mycheats', 'keyauth']));
 
     // Copiar alertRoleId si existe
     if (sourceData.channels?.alertRoleId) {
@@ -661,17 +687,21 @@ class Database {
     const isDiscordAdmin = member.permissions?.has ? member.permissions.has('Administrator') : false;
     const isDesignatedAdmin = this.isBotAdmin(member.id, gId);
     const isAdmin = isServerOwner || isDiscordAdmin || isDesignatedAdmin;
+    const guildEnabled = this.getEnabledProviders(gId);
 
     // 1. Revendedor registrado explícitamente en esta guild
     const reseller = this.getReseller(member.id, gId);
     if (reseller) {
+      const allowed = (reseller.isExpired ? [] : (reseller.allowedProviders || []))
+        .filter((p) => guildEnabled.includes(p));
+
       return {
         isAdmin,
         isReseller: true,
         isExpired: reseller.isExpired,
         daysLeft: reseller.daysLeft,
         expiresAt: reseller.expiresAt,
-        allowedProviders: reseller.isExpired ? [] : reseller.allowedProviders,
+        allowedProviders: allowed,
         maxDays: reseller.maxDays,
         dailyLimit: reseller.dailyLimit || 0,
         usedToday: reseller.usedToday || 0,
@@ -686,7 +716,7 @@ class Database {
         isReseller: true,
         isExpired: false,
         daysLeft: 9999,
-        allowedProviders: Object.keys(appConfig.providers),
+        allowedProviders: guildEnabled,
         maxDays: 90,
         dailyLimit: 0,
         usedToday: 0,
@@ -919,6 +949,8 @@ class Database {
       getAllKeys: (limit) => this.getAllKeys(limit, gId),
       findKey: (key) => this.findKey(key, gId),
       deleteKeyRecord: (keyId) => this.deleteKeyRecord(keyId, gId),
+      getEnabledProviders: () => this.getEnabledProviders(gId),
+      setEnabledProviders: (arr) => this.setEnabledProviders(gId, arr),
       recordWebAuditLog: (params) => this.recordWebAuditLog(gId, params),
       getWebAuditLogs: (limit) => this.getWebAuditLogs(gId, limit),
       cloneConfigFrom: (sourceGuildId, operatorTag) => this.cloneConfig(sourceGuildId, gId, operatorTag),
