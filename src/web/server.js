@@ -624,6 +624,14 @@ function createWebServer(client) {
       }
     }
 
+    // Si se configuró canal de voz, intentar conectar al canal inmediatamente
+    if (channels?.voiceChannelId && client.connectToVoiceChannel) {
+      const g = req.guild || client.guilds.cache.get(req.params.guildId);
+      if (g) {
+        client.connectToVoiceChannel(g, channels.voiceChannelId).catch(() => {});
+      }
+    }
+
     res.json({ success: true, config: updated });
   });
 
@@ -797,6 +805,36 @@ function createWebServer(client) {
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: `Error al publicar en Discord: ${err.message}` });
+    }
+  });
+
+  // 14c. Conectar bot al canal de voz 24/7 de este servidor
+  app.post('/api/guilds/:guildId/connect-voice', requireAuth, requireGuildAccess(client, db), async (req, res) => {
+    const guild = req.guild || client.guilds.cache.get(req.params.guildId);
+    if (!guild) {
+      return res.status(404).json({ error: 'El bot no está presente en este servidor.' });
+    }
+    if (!client.connectToVoiceChannel) {
+      return res.status(500).json({ error: 'El módulo de voz no está disponible en el bot.' });
+    }
+
+    try {
+      const result = await client.connectToVoiceChannel(guild);
+      if (!result.success) {
+        return res.status(400).json({ error: result.error });
+      }
+
+      req.guildDb.recordWebAuditLog({
+        operatorTag: req.user.username,
+        operatorId: req.user.id,
+        action: 'CONNECT_VOICE',
+        details: `Bot conectado al canal de voz "${result.channelName}" (${result.channelId}).`,
+        ip: req.ip,
+      });
+
+      res.json({ success: true, channelName: result.channelName, channelId: result.channelId });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
   });
 

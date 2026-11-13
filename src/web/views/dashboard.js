@@ -614,7 +614,13 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
             </div>
 
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Canal de Voz 24/7</label>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block text-xs font-medium text-slate-400">Canal de Voz 24/7</label>
+                <button type="button" id="btnConnectVoice" onclick="triggerConnectVoice()" class="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:text-white bg-emerald-500/10 hover:bg-emerald-600 border border-emerald-500/30 rounded-lg transition shadow-sm">
+                  <i class="fa-solid fa-volume-high"></i>
+                  <span>Conectar a Voz Ahora</span>
+                </button>
+              </div>
               <select id="cfg_sel_voiceChannelId" onchange="syncChannelInput('voiceChannelId', this.value)" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500 mb-1">
                 <option value="">-- Cargando canales de voz... --</option>
               </select>
@@ -636,13 +642,16 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
           </form>
 
           <div class="pt-4 border-t border-slate-800 space-y-2">
-            <span class="text-xs text-slate-400 block font-medium">Publicar Mensajes en Discord:</span>
+            <span class="text-xs text-slate-400 block font-medium">Publicar Mensajes & Acciones en Discord:</span>
             <div class="flex flex-wrap gap-2">
               <button onclick="publishDiscordPanel('panel')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 rounded-lg border border-slate-700 transition">
                 <i class="fa-solid fa-share-from-square"></i> Publicar Panel Licencias
               </button>
               <button onclick="publishDiscordPanel('admin-panel')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 rounded-lg border border-slate-700 transition">
                 <i class="fa-solid fa-sliders"></i> Publicar Panel Administrativo
+              </button>
+              <button onclick="triggerConnectVoice()" class="px-3 py-1.5 bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 rounded-lg border border-emerald-700/50 transition text-xs flex items-center gap-1.5">
+                <i class="fa-solid fa-volume-high text-emerald-400"></i> Conectar a Voz 24/7
               </button>
             </div>
           </div>
@@ -1956,6 +1965,28 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         showToast('Panel publicado exitosamente en Discord.');
       } catch (err) {
         showToast(err.message, 'error');
+      }
+    }
+
+    async function triggerConnectVoice() {
+      const btn = document.getElementById('btnConnectVoice');
+      const prevHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Conectando...';
+      }
+      try {
+        const res = await fetch(\`/api/guilds/\${currentGuildId}/connect-voice\`, { method: 'POST' });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        showToast(\`Bot conectado exitosamente al canal de voz "\${data.channelName}" (24/7 activo).\`, 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = prevHtml;
+        }
       }
     }
 

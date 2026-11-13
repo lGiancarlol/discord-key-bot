@@ -22,6 +22,11 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   new SlashCommandBuilder()
+    .setName('conectar-voz')
+    .setDescription('Conectar o reconectar el bot al canal de voz 24/7 de este servidor')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  new SlashCommandBuilder()
     .setName('admin')
     .setDescription('Designar o remover Administradores del Bot')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)

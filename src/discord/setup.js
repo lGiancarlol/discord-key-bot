@@ -178,6 +178,11 @@ async function autoSetupGuildChannels(guild, client, db, operatorTag = 'Sistema'
 
   gDb.updateConfig({ channels: updatedChannels });
 
+  // Conectar inmediatamente al canal de voz 24/7
+  if (client && client.connectToVoiceChannel) {
+    client.connectToVoiceChannel(guild, voiceChannel.id).catch(() => {});
+  }
+
   // 7. Publicar Paneles Automáticamente en los nuevos canales
   try {
     await panelChannel.send(createPanelPayload(guild.id, db));

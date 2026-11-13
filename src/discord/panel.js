@@ -116,6 +116,7 @@ function createAdminPanelPayload(guildId = null, db = null) {
         '│ 📋 **Lista General**       ▸ Todos los revendedores\n' +
         '│ 📊 **Estado & Stock**      ▸ Ver inventario de claves\n' +
         '│ 🌐 **Configurar Páginas**  ▸ Elegir webs activas en este sv\n' +
+        '│ 🔊 **Conectar a Voz**      ▸ Unir bot a canal de voz 24/7\n' +
         '╰───────────────────────────────────────────╯\n' +
         '💡 *Al asignar o modificar permisos, se abrirá un menú con casillas (checks) para elegir las plataformas con un solo clic.*'
     )
@@ -170,7 +171,12 @@ function createAdminPanelPayload(guildId = null, db = null) {
       .setCustomId('admin_btn_config_platforms')
       .setLabel('Configurar Páginas')
       .setEmoji('🌐')
-      .setStyle(ButtonStyle.Primary)
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('admin_btn_connect_voice')
+      .setLabel('Conectar a Voz')
+      .setEmoji('🔊')
+      .setStyle(ButtonStyle.Success)
   );
 
   return { embeds: [embed], components: [row1, row2, row3] };

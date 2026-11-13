@@ -10,7 +10,7 @@ const {
   ButtonStyle,
   Events,
 } = require('discord.js');
-const { joinVoiceChannel, VoiceConnectionStatus } = require('@discordjs/voice');
+const { joinVoiceChannel, getVoiceConnection, VoiceConnectionStatus } = require('@discordjs/voice');
 
 const config = require('./config');
 const db = require('./database');
@@ -242,7 +242,11 @@ client.once(Events.ClientReady, async () => {
   await registerSlashCommands();
   await checkAndPostPanel(guild);
   await checkAndPostAdminPanel(guild);
-  connectToVoiceChannel(guild);
+
+  // Conectar al canal de voz 24/7 en todos los servidores donde esté el bot
+  for (const g of client.guilds.cache.values()) {
+    connectToVoiceChannel(g).catch(() => {});
+  }
 
   // Log administrativo de encendido con diagnóstico de plataformas
   const allStock = db.getAllStock(guild.id);
@@ -343,21 +347,90 @@ client.on('guildCreate', async (guild) => {
   }
   await checkAndPostPanel(guild);
   await checkAndPostAdminPanel(guild);
-  if (guild.id === config.discord.guildId) {
-    connectToVoiceChannel(guild);
-  }
+  await connectToVoiceChannel(guild).catch(() => {});
 });
 
-let voiceReconnecting = false;
-function connectToVoiceChannel(guild) {
-  const voiceChannelId = config.discord.voiceChannelId;
-  if (!voiceChannelId) return;
+const voiceStates = new Map();
+
+async function connectToVoiceChannel(guild, targetVoiceId = null) {
+  if (!guild) return { success: false, error: 'Servidor no válido.' };
+
+  const gConfig = db.forGuild(guild.id).getConfig();
+  const voiceChannelId =
+    targetVoiceId ||
+    gConfig?.channels?.voiceChannelId ||
+    (guild.id === config.discord.guildId ? config.discord.voiceChannelId : null);
+
+  if (!voiceChannelId) {
+    return {
+      success: false,
+      error: 'No hay canal de voz configurado para este servidor. Configúralo en el Dashboard Web o con /setup.',
+    };
+  }
 
   try {
-    const channel = guild.channels.cache.get(voiceChannelId);
+    let channel = guild.channels.cache.get(voiceChannelId);
     if (!channel) {
-      console.warn(`[Voz] Canal de voz con ID ${voiceChannelId} no encontrado en el servidor.`);
-      return;
+      channel = await guild.channels.fetch(voiceChannelId).catch(() => null);
+    }
+
+    if (!channel) {
+      console.warn(`[Voz] Canal de voz (${voiceChannelId}) no encontrado en ${guild.name} (${guild.id}).`);
+      return {
+        success: false,
+        error: `Canal de voz (ID: ${voiceChannelId}) no encontrado en este servidor.`,
+      };
+    }
+
+    if (!channel.isVoiceBased()) {
+      return {
+        success: false,
+        error: `El canal "${channel.name}" no es un canal de voz.`,
+      };
+    }
+
+    // Verificar permisos del bot
+    const botMember = guild.members.me || (await guild.members.fetchMe().catch(() => null));
+    if (botMember) {
+      const perms = channel.permissionsFor(botMember);
+      if (perms && !perms.has(['ViewChannel', 'Connect'])) {
+        return {
+          success: false,
+          error: `El bot no tiene permisos suficientes (Ver Canal y Conectar) en "${channel.name}".`,
+        };
+      }
+    }
+
+    // Si ya está en este mismo canal activo, no reconectar innecesariamente
+    const existingConn = getVoiceConnection(guild.id);
+    if (
+      existingConn &&
+      existingConn.joinConfig?.channelId === channel.id &&
+      existingConn.state.status !== VoiceConnectionStatus.Destroyed
+    ) {
+      console.log(`[Voz] Ya conectado al canal de voz: ${channel.name} en ${guild.name}`);
+      return {
+        success: true,
+        channelName: channel.name,
+        channelId: channel.id,
+        alreadyConnected: true,
+      };
+    }
+
+    if (existingConn) {
+      try {
+        existingConn.destroy();
+      } catch (_) {}
+    }
+
+    let state = voiceStates.get(guild.id);
+    if (!state) {
+      state = { reconnecting: false, timer: null };
+      voiceStates.set(guild.id, state);
+    }
+    if (state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
     }
 
     const connection = joinVoiceChannel({
@@ -369,37 +442,58 @@ function connectToVoiceChannel(guild) {
     });
 
     connection.on(VoiceConnectionStatus.Ready, async () => {
-      console.log(`[Voz] Conectado exitosamente al canal de voz: ${channel.name} (${channel.id})`);
-      if (voiceReconnecting) {
-        voiceReconnecting = false;
+      console.log(`[Voz] Conectado exitosamente al canal de voz: ${channel.name} (${channel.id}) en ${guild.name}`);
+      if (state.reconnecting) {
+        state.reconnecting = false;
         await logToAdminChannel(
           new EmbedBuilder()
             .setColor(0x16a34a)
             .setTitle('[SISTEMA] Canal de Voz Reconectado')
-            .setDescription(`El bot se ha reconectado al canal de voz <#${channel.id}>.`)
+            .setDescription(`El bot se ha reconectado al canal de voz <#${channel.id}> en **${guild.name}**.`)
             .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-            .setTimestamp()
+            .setTimestamp(),
+          guild.id
         );
       }
     });
 
     connection.on(VoiceConnectionStatus.Disconnected, async () => {
-      console.warn('[Voz] Conexión de voz desconectada. Reintentando en 5s...');
-      voiceReconnecting = true;
+      console.warn(`[Voz] Desconectado del canal de voz en ${guild.name}. Reintentando en 5s...`);
+      state.reconnecting = true;
+      if (state.timer) clearTimeout(state.timer);
+      state.timer = setTimeout(() => {
+        connectToVoiceChannel(guild, voiceChannelId).catch(() => {});
+      }, 5000);
       await logToAdminChannel(
         new EmbedBuilder()
           .setColor(0xd97706)
           .setTitle('[SISTEMA] Canal de Voz Desconectado')
-          .setDescription(`El bot se desconectó temporalmente del canal de voz <#${voiceChannelId}>. Reintentando reconexión en 5 segundos...`)
+          .setDescription(`El bot se desconectó temporalmente del canal de voz <#${voiceChannelId}> en **${guild.name}**. Reintentando reconexión en 5 segundos...`)
           .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-          .setTimestamp()
+          .setTimestamp(),
+        guild.id
       );
-      setTimeout(() => connectToVoiceChannel(guild), 5000);
     });
+
+    connection.on('error', (err) => {
+      console.error(`[Voz] Error en la conexión de voz para ${guild.name}:`, err.message);
+    });
+
+    return {
+      success: true,
+      channelName: channel.name,
+      channelId: channel.id,
+    };
   } catch (err) {
-    console.error('[Voz] Error al conectar al canal de voz:', err.message);
+    console.error(`[Voz] Error al conectar al canal de voz en ${guild.name}:`, err.message);
+    return {
+      success: false,
+      error: err.message,
+    };
   }
 }
+
+client.connectToVoiceChannel = (guild, targetVoiceId = null) => connectToVoiceChannel(guild, targetVoiceId);
 
 // Monitor Periódico de Salud del Sistema (cada 15 minutos)
 let notifiedKeyauthLow = false;
@@ -628,6 +722,32 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
         return showPlatformsConfigMenu(interaction, interaction.guildId, db);
+      }
+
+      // /conectar-voz
+      if (commandName === 'conectar-voz') {
+        const perms = db.getUserPermissions(interaction.member, config, interaction.guildId);
+        if (!perms.isAdmin) {
+          return interaction.reply({
+            content: '⛔ **Acceso denegado:** Solo administradores pueden conectar el bot al canal de voz.',
+            ephemeral: true,
+          });
+        }
+        await interaction.deferReply({ ephemeral: true });
+        const guild = interaction.guild;
+        if (!guild) {
+          return interaction.editReply({ content: '❌ Este comando solo puede ejecutarse dentro de un servidor de Discord.' });
+        }
+        const res = await connectToVoiceChannel(guild);
+        if (res.success) {
+          return interaction.editReply({
+            content: `🔊 **¡Conectado exitosamente!**\nEl bot ahora está conectado al canal de voz **<#${res.channelId}>** (modo 24/7 activo en este servidor).`,
+          });
+        } else {
+          return interaction.editReply({
+            content: `❌ **No se pudo conectar al canal de voz:**\n${res.error}\n\n💡 *Tip: Puedes configurar o corregir el canal de voz usando \`/setup\` o desde el Dashboard Web.*`,
+          });
+        }
       }
 
       // /admin (Gestión de Administradores del Bot)
@@ -1202,6 +1322,24 @@ client.on('interactionCreate', async (interaction) => {
 
         if (customId === 'admin_btn_config_platforms') {
           return showPlatformsConfigMenu(interaction, interaction.guildId, db);
+        }
+
+        if (customId === 'admin_btn_connect_voice') {
+          await interaction.deferReply({ ephemeral: true });
+          const guild = interaction.guild;
+          if (!guild) {
+            return interaction.editReply({ content: '❌ Este botón solo puede usarse dentro de un servidor.' });
+          }
+          const res = await connectToVoiceChannel(guild);
+          if (res.success) {
+            return interaction.editReply({
+              content: `🔊 **¡Conectado exitosamente!**\nEl bot ahora está conectado al canal de voz **<#${res.channelId}>** (modo 24/7 activo en este servidor).`,
+            });
+          } else {
+            return interaction.editReply({
+              content: `❌ **No se pudo conectar al canal de voz:**\n${res.error}\n\n💡 *Tip: Puedes configurar o corregir el canal de voz usando \`/setup\` o desde el Dashboard Web.*`,
+            });
+          }
         }
       }
 
