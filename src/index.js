@@ -524,7 +524,8 @@ function startSystemMonitor(guild) {
                   `• **Acción:** El bot reintentará la conexión en la siguiente verificación.`
               )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-              .setTimestamp()
+              .setTimestamp(),
+            guild.id
           );
         } else if (h.online && !wasOnline) {
           // La plataforma se recuperó
@@ -538,14 +539,15 @@ function startSystemMonitor(guild) {
                   `• **Estado:** Operacional`
               )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-              .setTimestamp()
+              .setTimestamp(),
+            guild.id
           );
         }
         platformHealthCache[pid] = h;
       }
 
-      // 2. Verificar nivel de Stock de KeyAuth
-      const stock = db.getStock('keyauth');
+      // 2. Verificar nivel de Stock de KeyAuth para este servidor
+      const stock = db.getStock('keyauth', guild.id);
       if (stock.length <= 3 && !notifiedKeyauthLow) {
         notifiedKeyauthLow = true;
         await logToAdminChannel(
@@ -554,18 +556,19 @@ function startSystemMonitor(guild) {
             .setTitle('[STOCK] Nivel Crítico de Inventario')
             .setDescription(
               stock.length === 0
-                ? `El inventario de KeyAuth (Elite Pro) está completamente agotado.\nSe requiere recarga desde el Panel Administrativo o comando /stock add.`
-                : `Quedan únicamente **${stock.length} claves** de KeyAuth en inventario.`
+                ? `El inventario de KeyAuth (Elite Pro) está completamente agotado en este servidor.\nSe requiere recarga desde el Panel Administrativo o comando /stock add.`
+                : `Quedan únicamente **${stock.length} claves** de KeyAuth en inventario para este servidor.`
             )
             .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-            .setTimestamp()
+            .setTimestamp(),
+          guild.id
         );
       } else if (stock.length > 3) {
         notifiedKeyauthLow = false;
       }
 
-      // 3. Revisar vencimientos de revendedores
-      const resellers = db.getAllResellers();
+      // 3. Revisar vencimientos de revendedores de este servidor
+      const resellers = db.getAllResellers(guild.id);
       const now = Date.now();
       for (const r of resellers) {
         const expTime = new Date(r.expiresAt).getTime();
@@ -578,11 +581,12 @@ function startSystemMonitor(guild) {
               .setColor(0xdc2626)
               .setTitle('[MEMBRESÍA] Vencimiento de Revendedor')
               .setDescription(
-                `La membresía del revendedor <@${r.userId}> ha vencido hoy.\n` +
+                `La membresía del revendedor <@${r.userId}> ha vencido hoy en este servidor.\n` +
                   `El usuario no podrá generar claves hasta que se le renueve el tiempo con el comando /revendedor asignar o desde el Panel Administrativo.`
               )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-              .setTimestamp()
+              .setTimestamp(),
+            guild.id
           );
         }
       }
@@ -930,11 +934,12 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (sub === 'quitar') {
+          const gId = interaction.guildId || config.discord.guildId;
           const target = interaction.options.getUser('usuario');
-          const removed = db.removeReseller(target.id);
+          const removed = db.removeReseller(target.id, gId);
 
           if (removed) {
-            const opAudit = getUserAuditInfo(interaction.member, interaction.user, config);
+            const opAudit = getUserAuditInfo(interaction.member, interaction.user, config, gId);
             await logToAdminChannel(
               new EmbedBuilder()
                 .setColor(0xdc2626)
@@ -945,25 +950,27 @@ client.on('interactionCreate', async (interaction) => {
                   { name: 'Revendedor Revocado', value: `<@${target.id}>`, inline: true }
                 )
                 .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-                .setTimestamp()
+                .setTimestamp(),
+              gId
             );
           }
 
           return interaction.reply({
             content: removed
-              ? `🗑️ Se ha revocado la membresía de revendedor para <@${target.id}>.`
-              : `⚠️ El usuario <@${target.id}> no estaba registrado como revendedor.`,
+              ? `🗑️ Se ha revocado la membresía de revendedor para <@${target.id}> en este servidor.`
+              : `⚠️ El usuario <@${target.id}> no estaba registrado como revendedor en este servidor.`,
             ephemeral: true,
           });
         }
 
         if (sub === 'info') {
+          const gId = interaction.guildId || config.discord.guildId;
           const target = interaction.options.getUser('usuario');
-          const res = db.getReseller(target.id);
+          const res = db.getReseller(target.id, gId);
 
           if (!res) {
             return interaction.reply({
-              content: `ℹ️ El usuario <@${target.id}> no tiene membresía de revendedor asignada.`,
+              content: `ℹ️ El usuario <@${target.id}> no tiene membresía de revendedor asignada en este servidor.`,
               ephemeral: true,
             });
           }
@@ -975,13 +982,17 @@ client.on('interactionCreate', async (interaction) => {
             year: 'numeric',
           });
 
+          const gMeta = db.getAllProvidersMetadata(gId);
+          const platNames = res.allowedProviders.map((pid) => gMeta[pid]?.name || pid).join(', ') || 'Ninguna';
+
           const embed = new EmbedBuilder()
             .setColor(res.isExpired ? 0xe74c3c : 0x00d2d3)
             .setTitle(`👤 Perfil de Revendedor: ${target.tag}`)
             .setDescription(
-              `• **Estado:** ${statusText}\n` +
+              `• **Servidor:** ${interaction.guild?.name || 'Este Servidor'}\n` +
+                `• **Estado:** ${statusText}\n` +
                 `• **Vencimiento:** \`${expDate}\`\n` +
-                `• **Plataformas autorizadas:** \`${res.allowedProviders.join(', ') || 'Ninguna'}\`\n` +
+                `• **Plataformas autorizadas:** \`${platNames}\`\n` +
                 `• **Asignado por:** ${res.addedBy}`
             )
             .setTimestamp();
@@ -990,25 +1001,28 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (sub === 'lista') {
-          const all = db.getAllResellers();
+          const gId = interaction.guildId || config.discord.guildId;
+          const all = db.getAllResellers(gId);
           if (all.length === 0) {
             return interaction.reply({
-              content: 'ℹ️ No hay revendedores registrados actualmente.',
+              content: `ℹ️ No hay revendedores registrados actualmente en **${interaction.guild?.name || 'este servidor'}**.`,
               ephemeral: true,
             });
           }
 
+          const gMeta = db.getAllProvidersMetadata(gId);
           const lines = all.map((r) => {
             const expDate = new Date(r.expiresAt).toLocaleDateString('es-ES');
             const state = r.isExpired ? '🔴 Expirado' : `🟢 ${r.daysLeft}d restantes`;
-            return `• <@${r.userId}> ➔ ${state} (Vence: \`${expDate}\`) | [${r.allowedProviders.join(', ')}]`;
+            const plats = r.allowedProviders.map((pid) => gMeta[pid]?.name || pid).join(', ');
+            return `• <@${r.userId}> ➔ ${state} (Vence: \`${expDate}\`) | [${plats}]`;
           });
 
           const embed = new EmbedBuilder()
             .setColor(0x5865f2)
-            .setTitle('📋 Lista de Revendedores Registrados')
+            .setTitle(`📋 Revendedores de ${interaction.guild?.name || 'este servidor'}`)
             .setDescription(lines.join('\n'))
-            .setFooter({ text: 'Sistema de Revendedores' });
+            .setFooter({ text: 'Sistema Multi-Servidor • Auth Gateway' });
 
           return interaction.reply({ embeds: [embed], ephemeral: true });
         }
@@ -1031,8 +1045,10 @@ client.on('interactionCreate', async (interaction) => {
           const duracion = interaction.options.getInteger('duracion') || 30;
           const keysList = rawKeys.split(/[\s,\n]+/).map((k) => k.trim()).filter((k) => k.length > 0);
 
-          const result = db.addStock(providerId, keysList, duracion);
-          const pName = config.providers[providerId]?.name || 'KeyAuth (Elite Pro)';
+          const gId = interaction.guildId || config.discord.guildId;
+          const result = db.addStock(providerId, keysList, duracion, gId);
+          const pMeta = db.getProviderMetadata(gId, providerId);
+          const pName = pMeta?.name || config.providers[providerId]?.name || 'KeyAuth (Elite Pro)';
 
           const embed = new EmbedBuilder()
             .setColor(0x2ecc71)
@@ -1045,7 +1061,7 @@ client.on('interactionCreate', async (interaction) => {
             )
             .setTimestamp();
 
-          const opAudit = getUserAuditInfo(interaction.member, interaction.user, config);
+          const opAudit = getUserAuditInfo(interaction.member, interaction.user, config, gId);
           await logToAdminChannel(
             new EmbedBuilder()
               .setColor(0x16a34a)
@@ -1059,7 +1075,8 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Stock Total Disponible', value: `${result.total} claves`, inline: true }
               )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-              .setTimestamp()
+              .setTimestamp(),
+            gId
           );
 
           return interaction.reply({ embeds: [embed], ephemeral: true });
@@ -1094,8 +1111,10 @@ client.on('interactionCreate', async (interaction) => {
 
       // /mi-perfil
       if (commandName === 'mi-perfil') {
-        const perms = db.getUserPermissions(interaction.member, config);
-        const userKeys = db.getUserKeys(interaction.user.id, 100);
+        const gId = interaction.guildId || config.discord.guildId;
+        const perms = db.getUserPermissions(interaction.member, config, gId);
+        const userKeys = db.getUserKeys(interaction.user.id, 100, gId);
+        const gMeta = db.getAllProvidersMetadata(gId);
 
         let membershipDesc = '';
         if (perms.isAdmin) {
@@ -1112,17 +1131,20 @@ client.on('interactionCreate', async (interaction) => {
             membershipDesc = `🟢 **Estado:** Activo\n⏳ **Tiempo restante:** **${perms.daysLeft} días** (Vence: \`${expDate}\`)`;
           }
         } else {
-          membershipDesc = '⛔ **Estado:** Sin membresía de revendedor activa';
+          membershipDesc = '⛔ **Estado:** Sin membresía de revendedor activa en este servidor';
         }
+
+        const platNames = perms.allowedProviders.map((pid) => gMeta[pid]?.name || pid).join(', ') || 'Ninguna';
 
         const embed = new EmbedBuilder()
           .setColor(perms.isExpired ? 0xe74c3c : 0x00d2d3)
           .setTitle('👤 Tu Perfil de Revendedor')
           .setDescription(
-            `👤 **Usuario:** <@${interaction.user.id}>\n\n` +
+            `👤 **Usuario:** <@${interaction.user.id}>\n` +
+              `🏠 **Servidor:** ${interaction.guild?.name || 'Este Servidor'}\n\n` +
               `${membershipDesc}\n\n` +
-              `🌐 **Plataformas autorizadas:**\n\`${perms.allowedProviders.join(', ') || 'Ninguna'}\`\n\n` +
-              `📊 **Total licencias emitidas por ti:** **${userKeys.length}**`
+              `🌐 **Plataformas autorizadas:**\n\`${platNames}\`\n\n` +
+              `📊 **Total licencias emitidas en este servidor:** **${userKeys.length}**`
           )
           .setFooter({ text: 'Desarrollado por Gian • Auth Cloud Gateway' })
           .setTimestamp();
@@ -1132,23 +1154,25 @@ client.on('interactionCreate', async (interaction) => {
 
       // /mis-keys
       if (commandName === 'mis-keys') {
-        const userKeys = db.getUserKeys(interaction.user.id, 15);
+        const gId = interaction.guildId || config.discord.guildId;
+        const userKeys = db.getUserKeys(interaction.user.id, 15, gId);
         if (userKeys.length === 0) {
           return interaction.reply({
-            content: 'ℹ️ Aún no has generado ninguna licencia.',
+            content: `ℹ️ Aún no has generado ninguna licencia en **${interaction.guild?.name || 'este servidor'}**.`,
             ephemeral: true,
           });
         }
 
+        const gMeta = db.getAllProvidersMetadata(gId);
         const lines = userKeys.map(
           (k, idx) =>
-            `${idx + 1}. \`${k.key}\` (${k.days}d) - **${config.providers[k.providerId]?.name || k.providerId}**`
+            `${idx + 1}. \`${k.key}\` (${k.days}d) - **${gMeta[k.providerId]?.name || k.providerId}**`
         );
 
         const options = userKeys.slice(0, 15).map((k) => ({
           label: k.key.length > 25 ? `${k.key.substring(0, 22)}...` : k.key,
           value: `${k.providerId}|${k.key}`,
-          description: `${k.days}d - ${config.providers[k.providerId]?.name || k.providerId}`,
+          description: `${k.days}d - ${gMeta[k.providerId]?.name || k.providerId}`,
         }));
 
         const selectRow = new ActionRowBuilder().addComponents(
@@ -1304,22 +1328,25 @@ client.on('interactionCreate', async (interaction) => {
 
         if (customId === 'admin_btn_list_resellers') {
           await interaction.deferReply({ ephemeral: true });
-          const all = db.getAllResellers();
+          const gId = interaction.guildId || config.discord.guildId;
+          const all = db.getAllResellers(gId);
           if (all.length === 0) {
             return interaction.editReply({
-              content: 'ℹ️ No hay revendedores registrados actualmente.',
+              content: `ℹ️ No hay revendedores registrados actualmente en **${interaction.guild?.name || 'este servidor'}**.`,
             });
           }
 
+          const gMeta = db.getAllProvidersMetadata(gId);
           const lines = all.map((r) => {
             const expDate = new Date(r.expiresAt).toLocaleDateString('es-ES');
             const state = r.isExpired ? '🔴 Expirado' : `🟢 ${r.daysLeft}d restantes`;
-            return `• <@${r.userId}> ➔ ${state} (Vence: \`${expDate}\`) | [${r.allowedProviders.join(', ')}]`;
+            const plats = r.allowedProviders.map((pid) => gMeta[pid]?.name || pid).join(', ');
+            return `• <@${r.userId}> ➔ ${state} (Vence: \`${expDate}\`) | [${plats}]`;
           });
 
           const embed = new EmbedBuilder()
             .setColor(0x5865f2)
-            .setTitle('📋 Lista de Revendedores Registrados')
+            .setTitle(`📋 Revendedores de ${interaction.guild?.name || 'este servidor'}`)
             .setDescription(lines.join('\n'))
             .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
             .setTimestamp();
@@ -1527,23 +1554,25 @@ client.on('interactionCreate', async (interaction) => {
 
       // MIS LICENCIAS (Panel personal)
       if (customId === 'btn_my_keys') {
-        const userKeys = db.getUserKeys(user.id, 15);
+        const gId = interaction.guildId || config.discord.guildId;
+        const userKeys = db.getUserKeys(user.id, 15, gId);
         if (userKeys.length === 0) {
           return interaction.reply({
-            content: 'ℹ️ Aún no has generado ninguna licencia.',
+            content: `ℹ️ Aún no has generado ninguna licencia en **${interaction.guild?.name || 'este servidor'}**.`,
             ephemeral: true,
           });
         }
 
+        const gMeta = db.getAllProvidersMetadata(gId);
         const lines = userKeys.map(
           (k, idx) =>
-            `${idx + 1}. \`${k.key}\` (${k.days}d) - **${config.providers[k.providerId]?.name || k.providerId}**`
+            `${idx + 1}. \`${k.key}\` (${k.days}d) - **${gMeta[k.providerId]?.name || k.providerId}**`
         );
 
         const options = userKeys.slice(0, 15).map((k) => ({
           label: k.key.length > 25 ? `${k.key.substring(0, 22)}...` : k.key,
           value: `${k.providerId}|${k.key}`,
-          description: `${k.days}d - ${config.providers[k.providerId]?.name || k.providerId}`,
+          description: `${k.days}d - ${gMeta[k.providerId]?.name || k.providerId}`,
         }));
 
         const selectRow = new ActionRowBuilder().addComponents(
@@ -1894,8 +1923,8 @@ client.on('interactionCreate', async (interaction) => {
 
     // 4. SUBMIT DE MODALS (Formularios)
     if (interaction.isModalSubmit()) {
-      const { customId, member, user } = interaction;
-      const perms = db.getUserPermissions(member, config);
+      const { customId, member, user, guildId } = interaction;
+      const perms = db.getUserPermissions(member, config, guildId);
 
       // ── MODALES DEL PANEL ADMINISTRATIVO ──
       if (customId === 'modal_admin_assign_reseller') {
@@ -1983,28 +2012,30 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
-        const current = db.getReseller(targetId);
+        const current = db.getReseller(targetId, guildId);
         if (!current) {
           return interaction.reply({
-            content: `⚠️ El usuario <@${targetId}> no está registrado como revendedor. Primero asígnale tiempo con **Asignar Revendedor**.`,
+            content: `⚠️ El usuario <@${targetId}> no está registrado como revendedor en este servidor. Primero asígnale tiempo con **Asignar Revendedor**.`,
             ephemeral: true,
           });
         }
 
-        const serverEnabled = db.getEnabledProviders(interaction.guildId);
+        const serverEnabled = db.getEnabledProviders(guildId);
+        const gMeta = db.getAllProvidersMetadata(guildId);
         const platformOptions = [
           {
             label: '🌟 TODAS LAS PLATAFORMAS (De este servidor)',
             value: 'all',
             description: 'Otorga acceso a las plataformas activas en este servidor',
           },
-          ...Object.entries(config.providers)
-            .filter(([pid]) => serverEnabled.includes(pid))
-            .map(([pid, p]) => ({
-              label: p.name,
+          ...serverEnabled.map((pid) => {
+            const m = gMeta[pid] || { name: pid, desc: '' };
+            return {
+              label: m.name.slice(0, 100),
               value: pid,
-              description: `Habilitar acceso a ${p.name}`,
-            })),
+              description: (m.desc || `Habilitar acceso a ${m.name}`).slice(0, 100),
+            };
+          }),
         ];
 
         const selectRow = new ActionRowBuilder().addComponents(
@@ -2089,10 +2120,10 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
-        const res = db.getReseller(targetId);
+        const res = db.getReseller(targetId, guildId);
         if (!res) {
           return interaction.reply({
-            content: `ℹ️ El usuario <@${targetId}> no está registrado como revendedor en la base de datos.`,
+            content: `ℹ️ El usuario <@${targetId}> no está registrado como revendedor en este servidor.`,
             ephemeral: true,
           });
         }
@@ -2104,17 +2135,20 @@ client.on('interactionCreate', async (interaction) => {
           year: 'numeric',
         });
 
-        const userKeys = db.getUserKeys(targetId, 100);
+        const userKeys = db.getUserKeys(targetId, 100, guildId);
+        const gMeta = db.getAllProvidersMetadata(guildId);
+        const platNames = res.allowedProviders.map((pid) => gMeta[pid]?.name || pid).join(', ') || 'Ninguna';
 
         const embed = new EmbedBuilder()
           .setColor(res.isExpired ? 0xe74c3c : 0x00d2d3)
           .setTitle(`👤 Información de Revendedor: <@${targetId}>`)
           .setDescription(
-            `• **Usuario:** <@${targetId}> (\`${targetId}\`)\n` +
+            `• **Servidor:** ${interaction.guild?.name || 'Este Servidor'}\n` +
+              `• **Usuario:** <@${targetId}> (\`${targetId}\`)\n` +
               `• **Estado:** ${statusText}\n` +
               `• **Fecha de Vencimiento:** \`${expDate}\`\n` +
-              `• **Plataformas Autorizadas:** \`${res.allowedProviders.join(', ') || 'Ninguna'}\`\n` +
-              `• **Total Licencias Emitidas:** **${userKeys.length}**\n` +
+              `• **Plataformas Autorizadas:** \`${platNames}\`\n` +
+              `• **Total Licencias Emitidas en este servidor:** **${userKeys.length}**\n` +
               `• **Registrado por:** ${res.addedBy}`
           )
           .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
