@@ -1540,11 +1540,33 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
-        // Si solo tiene acceso a 1 plataforma, abrir modal directo
+        // Si solo tiene acceso a 1 plataforma, abrir modal directo o selector de sub
         if (perms.allowedProviders.length === 1) {
+          const onlyPid = perms.allowedProviders[0];
+          if (onlyPid === 'mycheats') {
+            const provider = providerManager.getForGuild('mycheats', interaction.guildId, db);
+            const subs = await provider.getSubscriptions();
+            const subOptions = subs.map((s) => ({
+              label: s.name.slice(0, 100),
+              value: String(s.id),
+              description: `Crear cuenta con suscripción ${s.name}`.slice(0, 100),
+            }));
+            const subRow = new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId('select_mycheats_sub')
+                .setPlaceholder('Selecciona la suscripción de WorldCheats')
+                .addOptions(subOptions)
+            );
+            return interaction.reply({
+              content: '👤 **Selecciona el tipo de suscripción para WorldCheats:**',
+              components: [subRow],
+              ephemeral: true,
+            });
+          }
+
           const defaultPrefix = db.forGuild(interaction.guildId).getDefaultPrefix();
           return interaction.showModal(
-            getCreateKeyModal(perms.allowedProviders[0], perms.maxDays, defaultPrefix)
+            getCreateKeyModal(onlyPid, perms.maxDays, defaultPrefix)
           );
         }
 
@@ -1821,9 +1843,48 @@ client.on('interactionCreate', async (interaction) => {
             ephemeral: true,
           });
         }
+
+        if (selectedProvider === 'mycheats') {
+          const provider = providerManager.getForGuild('mycheats', interaction.guildId, db);
+          const subs = await provider.getSubscriptions();
+          const subOptions = subs.map((s) => ({
+            label: s.name.slice(0, 100),
+            value: String(s.id),
+            description: `Crear cuenta con suscripción ${s.name}`.slice(0, 100),
+          }));
+          const subRow = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId('select_mycheats_sub')
+              .setPlaceholder('Selecciona la suscripción de WorldCheats')
+              .addOptions(subOptions)
+          );
+          return interaction.update({
+            content: '👤 **Selecciona el tipo de suscripción para WorldCheats:**',
+            components: [subRow],
+          });
+        }
+
         const defaultPrefix = db.forGuild(interaction.guildId).getDefaultPrefix();
         return interaction.showModal(
           getCreateKeyModal(selectedProvider, perms.maxDays, defaultPrefix)
+        );
+      }
+
+      if (customId === 'select_mycheats_sub') {
+        if (!perms.allowedProviders.includes('mycheats') && !perms.isAdmin) {
+          return interaction.reply({
+            content: '⛔ No tienes acceso a esta plataforma.',
+            ephemeral: true,
+          });
+        }
+        const chosenSubId = values[0];
+        const provider = providerManager.getForGuild('mycheats', interaction.guildId, db);
+        const subs = await provider.getSubscriptions();
+        const foundSub = subs.find((s) => String(s.id) === String(chosenSubId));
+        const subName = foundSub ? foundSub.name : '';
+        const defaultPrefix = db.forGuild(interaction.guildId).getDefaultPrefix();
+        return interaction.showModal(
+          getCreateKeyModal('mycheats', perms.maxDays, defaultPrefix, chosenSubId, subName)
         );
       }
 
@@ -2357,7 +2418,13 @@ client.on('interactionCreate', async (interaction) => {
       // CREAR KEY
       if (customId.startsWith('modal_create_')) {
         const gId = interaction.guildId || config.discord.guildId;
-        const providerId = customId.replace('modal_create_', '');
+        const rawTarget = customId.replace('modal_create_', '');
+        let providerId = rawTarget;
+        let chosenSubId = null;
+        if (rawTarget.startsWith('mycheats_')) {
+          chosenSubId = rawTarget.replace('mycheats_', '');
+          providerId = 'mycheats';
+        }
         const provider = providerManager.getForGuild(providerId, gId, db);
 
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
@@ -2471,12 +2538,13 @@ client.on('interactionCreate', async (interaction) => {
         const finalPrefix = (prefix && prefix.trim()) ? prefix.trim() : (providerId === 'mycheats' ? (serverPrefix || 'USER') : serverPrefix);
 
         try {
-          console.log(`[Discord Keys] Emisión en guild ${gId} (${providerId}) por @${user.tag} - Cuenta: "${provider.config?.username || provider.config?.sellerKey || 'Default'}"`);
+          console.log(`[Discord Keys] Emisión en guild ${gId} (${providerId}${chosenSubId ? ' sub:' + chosenSubId : ''}) por @${user.tag} - Cuenta: "${provider.config?.username || provider.config?.sellerKey || 'Default'}"`);
           const items = await provider.createKey({
             days,
             count,
             prefix: finalPrefix,
             note,
+            subId: chosenSubId,
           });
 
           // Registrar en Anti-Flood y Cuota Diaria
@@ -2494,6 +2562,8 @@ client.on('interactionCreate', async (interaction) => {
               days: itemDays,
               prefix: finalPrefix,
               note,
+              subId: typeof item === 'object' && item.subId ? item.subId : chosenSubId,
+              subName: typeof item === 'object' && item.subName ? item.subName : undefined,
             }, gId);
           }
 
@@ -2505,19 +2575,24 @@ client.on('interactionCreate', async (interaction) => {
             .map((item) => {
               const val = typeof item === 'object' ? (item.username ? `${item.username}:1` : item.key) : item;
               const itemDays = typeof item === 'object' && item.days ? item.days : days;
+              const itemSubName = typeof item === 'object' && item.subName ? item.subName : '';
               return getForwardTemplate({
                 providerName: pDisplayName,
                 keyOrUser: val,
                 days: itemDays,
                 isAccount: providerId === 'mycheats',
+                subName: itemSubName,
                 guildId: gId,
               });
             })
             .join('\n');
 
+          const firstSubName = items[0] && typeof items[0] === 'object' && items[0].subName ? items[0].subName : '';
+          const displayHeader = firstSubName ? `${pDisplayName} • ${firstSubName}` : pDisplayName;
+
           const successEmbed = new EmbedBuilder()
             .setColor(0x00d2d3)
-            .setTitle(`✅ ${providerId === 'mycheats' ? 'Cuenta Creada' : 'Licencia Creada'} (${pDisplayName})`)
+            .setTitle(`✅ ${providerId === 'mycheats' ? 'Cuenta Creada' : 'Licencia Creada'} (${displayHeader})`)
             .setDescription(
               `Copia el siguiente recuadro para enviarlo directamente a tu cliente por WhatsApp:\n\n` +
                 forwardTemplates +
@@ -2533,25 +2608,32 @@ client.on('interactionCreate', async (interaction) => {
           const isVipAccount = providerId === 'mycheats';
           const title = isVipAccount ? '[AUDITORÍA] Creación de Cuenta VIP' : '[AUDITORÍA] Emisión de Licencia';
 
+          const logFields = [
+            { name: 'Operador', value: `<@${user.id}>`, inline: true },
+            { name: 'Rango', value: opAudit.role, inline: true },
+            { name: 'Membresía', value: opAudit.membership, inline: true },
+            { name: 'Plataforma', value: provider.name, inline: true },
+          ];
+          if (firstSubName) {
+            logFields.push({ name: 'Suscripción', value: firstSubName, inline: true });
+          }
+          logFields.push(
+            { name: 'Duración', value: `${days} días`, inline: true },
+            { name: 'Cantidad', value: `${count} unidad(es)`, inline: true },
+            {
+              name: isVipAccount ? 'Cuentas Generadas' : 'Claves Generadas',
+              value: items
+                .map((k) => (typeof k === 'object' ? (k.username ? `||\`${k.username}:1\`||` : `||\`${k.key}\`||`) : `||\`${k}\`||`))
+                .join('\n'),
+              inline: false,
+            },
+            { name: 'Cliente / Nota', value: note || 'Sin nota registrada', inline: false }
+          );
+
           const logEmbed = new EmbedBuilder()
             .setColor(0x2563eb)
             .setTitle(title)
-            .addFields(
-              { name: 'Operador', value: `<@${user.id}>`, inline: true },
-              { name: 'Rango', value: opAudit.role, inline: true },
-              { name: 'Membresía', value: opAudit.membership, inline: true },
-              { name: 'Plataforma', value: provider.name, inline: true },
-              { name: 'Duración', value: `${days} días`, inline: true },
-              { name: 'Cantidad', value: `${count} unidad(es)`, inline: true },
-              {
-                name: isVipAccount ? 'Cuentas Generadas' : 'Claves Generadas',
-                value: items
-                  .map((k) => (typeof k === 'object' ? (k.username ? `||\`${k.username}:1\`||` : `||\`${k.key}\`||`) : `||\`${k}\`||`))
-                  .join('\n'),
-                inline: false,
-              },
-              { name: 'Cliente / Nota', value: note || 'Sin nota registrada', inline: false }
-            )
+            .addFields(logFields)
             .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
             .setTimestamp();
 

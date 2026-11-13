@@ -91,17 +91,50 @@ class MyCheatsProvider extends BaseProvider {
     }
   }
 
+  async getSubscriptions() {
+    const fallback = [
+      { id: '237', name: 'Undetect (Level 1)' },
+      { id: '239', name: 'Ultimate (Level 2)' },
+      { id: '241', name: 'Classic (Level 3)' },
+      { id: '245', name: 'SkinChanger (Level 5)' },
+    ];
+
+    try {
+      await this.ensureAuth();
+      const appId = (this.config.appId && String(this.config.appId).trim()) || this.detectedAppId || '146';
+      const res = await this.client.get(`/dashboard?page=app-users&app_id=${appId}`);
+      const re = /<input[^>]+name=['"](?:create_project_subs\[\]|m_subs\[\]|subs\[\])['"][^>]*value=['"](\d+)['"][^>]*>([\s\S]*?)<\/span>/gi;
+      let m;
+      const subs = [];
+      while ((m = re.exec(res.data)) !== null) {
+        const cleanName = m[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+        subs.push({ id: m[1], name: cleanName });
+      }
+      if (subs.length > 0) return subs;
+    } catch (_) {}
+
+    return fallback;
+  }
+
   /**
    * Generar Usuario y Contraseña en WorldCheats (MyCheats)
    * Contraseña siempre por defecto = 1
    */
-  async createKey({ days, count = 1, prefix = 'VIP', note = '' }) {
+  async createKey({ days, count = 1, prefix = 'VIP', note = '', subId = null }) {
     await this.ensureAuth();
     const createdUsers = [];
     const appId = (this.config.appId && String(this.config.appId).trim()) || this.detectedAppId || '146';
-    const subId = (this.config.defaultSubId && String(this.config.defaultSubId).trim()) || '237';
+    const effectiveSubId = (subId && String(subId).trim()) || (this.config.defaultSubId && String(this.config.defaultSubId).trim()) || '237';
 
-    console.log(`[WorldCheats] Generando ${count} cuenta(s) en app_id=${appId}, sub_id=${subId} con credenciales de usuario="${this.config.username}"`);
+    const subNames = {
+      '237': 'Undetect (Level 1)',
+      '239': 'Ultimate (Level 2)',
+      '241': 'Classic (Level 3)',
+      '245': 'SkinChanger (Level 5)',
+    };
+    const subDisplayName = subNames[effectiveSubId] || `Sub #${effectiveSubId}`;
+
+    console.log(`[WorldCheats] Generando ${count} cuenta(s) en app_id=${appId}, sub_id=${effectiveSubId} (${subDisplayName}) con credenciales de usuario="${this.config.username}"`);
 
     try {
       for (let i = 0; i < count; i++) {
@@ -116,7 +149,7 @@ class MyCheatsProvider extends BaseProvider {
         params.append('app_user_expiry', '');
         params.append('app_user_username', username);
         params.append('app_user_password', password);
-        params.append('app_user_subscription', String(subId));
+        params.append('app_user_subscription', String(effectiveSubId));
         params.append('app_user_extra_subs', '[]');
         params.append('expiry_unit', 'Days');
         params.append('expiry_days', String(days));
@@ -158,6 +191,8 @@ class MyCheatsProvider extends BaseProvider {
             password: '1',
             key: `${altUsername}:1`,
             days,
+            subId: effectiveSubId,
+            subName: subDisplayName,
           });
         } else {
           createdUsers.push({
@@ -166,6 +201,8 @@ class MyCheatsProvider extends BaseProvider {
             password: '1',
             key: `${username}:1`,
             days,
+            subId: effectiveSubId,
+            subName: subDisplayName,
           });
         }
       }

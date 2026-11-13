@@ -396,9 +396,23 @@ function createWebServer(client) {
     res.json(keys);
   });
 
+  // 7.1 Suscripciones de WorldCheats
+  app.get('/api/guilds/:guildId/providers/mycheats/subscriptions', requireAuth, requireGuildAccess(client, db), async (req, res) => {
+    try {
+      const provider = providerManager.getForGuild('mycheats', req.params.guildId, db);
+      if (!provider) {
+        return res.status(404).json({ error: 'WorldCheats no configurado en este servidor.' });
+      }
+      const subs = await provider.getSubscriptions();
+      res.json({ success: true, subscriptions: subs });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // 8. Emisión Rápida de Licencias desde Web
   app.post('/api/guilds/:guildId/keys/create', requireAuth, requireGuildAccess(client, db), async (req, res) => {
-    const { providerId, days = 30, count = 1, prefix = '', note = '' } = req.body;
+    const { providerId, days = 30, count = 1, prefix = '', note = '', subId = null } = req.body;
     const { guildId } = req.params;
 
     const defaultPrefix = req.guildDb.getDefaultPrefix();
@@ -445,12 +459,13 @@ function createWebServer(client) {
     }
 
     try {
-      console.log(`[Web Keys] Emisión en guild ${guildId} (${providerId}) por @${req.user.username} - Cuenta: "${provider.config?.username || provider.config?.sellerKey || 'Default'}"`);
+      console.log(`[Web Keys] Emisión en guild ${guildId} (${providerId}${subId ? ' sub:' + subId : ''}) por @${req.user.username} - Cuenta: "${provider.config?.username || provider.config?.sellerKey || 'Default'}"`);
       const items = await provider.createKey({
         days: Number(days),
         count: Number(count),
         prefix: targetPrefix,
         note,
+        subId: subId || null,
       });
 
       // Registrar uso en Anti-Flood y Cuota Diaria
@@ -468,6 +483,8 @@ function createWebServer(client) {
           days: itemDays,
           prefix: targetPrefix,
           note,
+          subId: typeof item === 'object' && item.subId ? item.subId : subId,
+          subName: typeof item === 'object' && item.subName ? item.subName : undefined,
         });
       }
 
@@ -479,39 +496,49 @@ function createWebServer(client) {
         .map((item) => {
           const val = typeof item === 'object' ? (item.username ? `${item.username}:1` : item.key) : item;
           const itemDays = typeof item === 'object' && item.days ? item.days : days;
+          const itemSubName = typeof item === 'object' && item.subName ? item.subName : '';
           return req.guildDb.formatForwardTemplate({
             providerName: pDisplayName,
             keyOrUser: val,
             days: itemDays,
             isAccount: providerId === 'mycheats',
+            subName: itemSubName,
           });
         })
         .join('\n');
 
       // Auditoría en Discord
       const isAccount = providerId === 'mycheats';
+      const firstSubName = items[0] && typeof items[0] === 'object' && items[0].subName ? items[0].subName : '';
+      const auditFields = [
+        { name: 'Operador', value: `${req.user.username} (Panel Web)`, inline: true },
+        { name: 'Rango', value: 'Administrador Web', inline: true },
+        { name: 'Membresía', value: 'Acceso Ilimitado Permanente', inline: true },
+        { name: 'Plataforma', value: provider.name, inline: true },
+      ];
+      if (firstSubName) {
+        auditFields.push({ name: 'Suscripción', value: firstSubName, inline: true });
+      }
+      auditFields.push(
+        { name: 'Duración', value: `${days} días`, inline: true },
+        { name: 'Cantidad', value: `${count} unidad(es)`, inline: true },
+        {
+          name: isAccount ? 'Cuentas Generadas' : 'Claves Generadas',
+          value: items
+            .map((k) => (typeof k === 'object' ? (k.username ? `||\`${k.username}:1\`||` : `||\`${k.key}\`||`) : `||\`${k}\`||`))
+            .join('\n'),
+          inline: false,
+        },
+        { name: 'Nota / Cliente', value: note || 'Sin nota', inline: false }
+      );
+
       await logToGuildAdminChannel(
         client,
         guildId,
         new EmbedBuilder()
           .setColor(0x2563eb)
           .setTitle(isAccount ? '[AUDITORÍA] Creación de Cuenta VIP' : '[AUDITORÍA] Emisión de Licencia')
-          .addFields(
-            { name: 'Operador', value: `${req.user.username} (Panel Web)`, inline: true },
-            { name: 'Rango', value: 'Administrador Web', inline: true },
-            { name: 'Membresía', value: 'Acceso Ilimitado Permanente', inline: true },
-            { name: 'Plataforma', value: provider.name, inline: true },
-            { name: 'Duración', value: `${days} días`, inline: true },
-            { name: 'Cantidad', value: `${count} unidad(es)`, inline: true },
-            {
-              name: isAccount ? 'Cuentas Generadas' : 'Claves Generadas',
-              value: items
-                .map((k) => (typeof k === 'object' ? (k.username ? `||\`${k.username}:1\`||` : `||\`${k.key}\`||`) : `||\`${k}\`||`))
-                .join('\n'),
-              inline: false,
-            },
-            { name: 'Nota / Cliente', value: note || 'Sin nota', inline: false }
-          )
+          .addFields(auditFields)
           .setFooter({ text: 'Sistema de Auditoría • Auth Gateway Web' })
           .setTimestamp()
       );

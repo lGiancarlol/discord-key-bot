@@ -861,7 +861,7 @@ class Database {
 
   // ── FORMATO DE PLANTILLA DE ENTREGA PERSONALIZABLE (WHATSAPP / TELEGRAM) ──
 
-  formatForwardTemplate({ providerName, keyOrUser, days, isAccount = false, guildId = null }) {
+  formatForwardTemplate({ providerName, keyOrUser, days, isAccount = false, subName = '', guildId = null }) {
     const gData = this.getGuildData(guildId);
     const tmpl = gData.customTemplate || {};
 
@@ -889,6 +889,7 @@ class Database {
         .replace(/{key}|{clave}|{password}|{pass}/gi, pass)
         .replace(/{user}|{usuario}|{username}/gi, uname || 'N/A')
         .replace(/{provider}|{plataforma}|{pagina}/gi, providerName)
+        .replace(/{sub}|{subname}|{suscripcion}/gi, subName || 'Default')
         .replace(/{days}|{dias}|{duracion}/gi, `${days} Días`)
         .replace(/{days_num}|{num_dias}/gi, String(days))
         .replace(/{store}|{tienda}/gi, store)
@@ -905,6 +906,9 @@ class Database {
       if (store) msg += `*${store.toUpperCase()}*\n\n`;
       msg += `*DETALLES DE TU ACCESO*\n`;
       msg += `Plataforma: ${providerName}\n`;
+      if (subName) {
+        msg += `Suscripción: ${subName}\n`;
+      }
       if (isAccount) {
         msg += `Usuario: ${uname}\n`;
         msg += `Contraseña: ${pass}\n`;
@@ -924,10 +928,12 @@ class Database {
     const footerLine = footer ? `\n💬 ${footer}` : '';
 
     if (isAccount) {
+      const subLine = subName ? `🏷️ Suscripción: ${subName}\n` : '';
       const msg =
         storeHeader +
         `👤 Usuario: ${uname}\n` +
         `🔑 Contraseña: ${pass}\n` +
+        subLine +
         `⏳ Duración: ${days} Días\n` +
         `📱 Plataforma: ${providerName}\n` +
         `⚠️ Nota: ${note}` +
@@ -935,9 +941,11 @@ class Database {
       return wrapCode ? `\`\`\`text\n${msg}\n\`\`\`` : msg;
     }
 
+    const subLine = subName ? `🏷️ Suscripción: ${subName}\n` : '';
     const msg =
       storeHeader +
       `🔑 Clave: ${pass}\n` +
+      subLine +
       `⏳ Duración: ${days} Días\n` +
       `📱 Plataforma: ${providerName}\n` +
       `⚠️ Nota: ${note}` +

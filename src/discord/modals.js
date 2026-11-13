@@ -5,7 +5,7 @@ const {
   ActionRowBuilder,
 } = require('discord.js');
 
-function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = '') {
+function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = '', subId = '', subName = '') {
   // Modal específico para KeyAuth (Elite Pro): Funciona por stock precargado
   if (providerId === 'keyauth') {
     const modal = new ModalBuilder()
@@ -51,11 +51,16 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = 
   const isUid = providerId === 'bypass_uid';
 
   let title = '⚡ Crear Licencia Bypass APK';
-  if (isUserAccount) title = '👤 Crear Usuario (WorldCheats Panel VIP)';
+  let modalCustomId = `modal_create_${providerId}`;
+
+  if (isUserAccount) {
+    title = subName ? `👤 ${subName}`.slice(0, 45) : '👤 Crear Usuario (WorldCheats VIP)';
+    if (subId) modalCustomId = `modal_create_mycheats_${subId}`;
+  }
   if (isUid) title = '🛡️ Crear Licencia Bypass UID (Auto ON)';
 
   const modal = new ModalBuilder()
-    .setCustomId(`modal_create_${providerId}`)
+    .setCustomId(modalCustomId)
     .setTitle(title);
 
   const daysLabel = isUid

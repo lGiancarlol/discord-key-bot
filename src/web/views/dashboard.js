@@ -425,6 +425,19 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
               </select>
             </div>
 
+            <div id="gen_sub_container" style="display: none;">
+              <label class="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider flex items-center justify-between">
+                <span>Suscripción (WorldCheats)</span>
+                <span class="text-[10px] text-brand-400 font-normal">Fácil selección</span>
+              </label>
+              <select id="gen_sub_id" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
+                <option value="237">237 - Undetect (Level 1)</option>
+                <option value="239">239 - Ultimate (Level 2)</option>
+                <option value="241">241 - Classic (Level 3)</option>
+                <option value="245">245 - SkinChanger (Level 5)</option>
+              </select>
+            </div>
+
             <div class="grid grid-cols-2 gap-4">
               <div id="gen_days_container">
                 <label class="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Duración (Días)</label>
@@ -798,8 +811,13 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
                   <input type="text" id="cfg_mycheats_appId" placeholder="Ej: 146 (dejar vacío para autodetección)" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500">
                 </div>
                 <div>
-                  <label class="block text-[11px] text-slate-400 mb-1">Sub ID (Opcional)</label>
-                  <input type="text" id="cfg_mycheats_subId" placeholder="Ej: 237" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+                  <label class="block text-[11px] text-slate-400 mb-1">Suscripción Predeterminada</label>
+                  <select id="cfg_mycheats_subId" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+                    <option value="237">237 - Undetect (Level 1)</option>
+                    <option value="239">239 - Ultimate (Level 2)</option>
+                    <option value="241">241 - Classic (Level 3)</option>
+                    <option value="245">245 - SkinChanger (Level 5)</option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -1742,7 +1760,42 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
     function handleGenProviderChange() {
       const pid = document.getElementById('gen_provider').value;
       const isKeyauth = pid === 'keyauth';
+      const isMycheats = pid === 'mycheats';
       document.getElementById('gen_prefix_container').style.display = isKeyauth ? 'none' : '';
+      const subCont = document.getElementById('gen_sub_container');
+      if (subCont) {
+        subCont.style.display = isMycheats ? '' : 'none';
+      }
+      if (isMycheats) {
+        loadWorldCheatsSubs();
+      }
+    }
+
+    async function loadWorldCheatsSubs() {
+      try {
+        if (!currentGuildId) return;
+        const res = await fetch(\`/api/guilds/\${currentGuildId}/providers/mycheats/subscriptions\`);
+        const data = await res.json();
+        if (data && data.subscriptions && data.subscriptions.length > 0) {
+          const populateSelect = (elemId) => {
+            const el = document.getElementById(elemId);
+            if (!el) return;
+            const currentVal = el.value;
+            el.innerHTML = '';
+            data.subscriptions.forEach((s) => {
+              const opt = document.createElement('option');
+              opt.value = String(s.id);
+              opt.textContent = \`\${s.id} - \${s.name}\`;
+              el.appendChild(opt);
+            });
+            if (currentVal && [...el.options].some((o) => o.value === currentVal)) {
+              el.value = currentVal;
+            }
+          };
+          populateSelect('gen_sub_id');
+          populateSelect('cfg_mycheats_subId');
+        }
+      } catch (_) {}
     }
 
     async function submitFastGen(e) {
@@ -1752,6 +1805,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       const count = parseInt(document.getElementById('gen_count').value || '1', 10);
       const prefix = (document.getElementById('gen_prefix').value || '').trim();
       const note = (document.getElementById('gen_note').value || '').trim();
+      const subId = providerId === 'mycheats' ? (document.getElementById('gen_sub_id')?.value || null) : null;
 
       const btn = document.getElementById('btn-submit-gen');
       btn.disabled = true;
@@ -1761,7 +1815,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         const res = await fetch(\`/api/guilds/\${currentGuildId}/keys/create\`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ providerId, days, count, prefix, note })
+          body: JSON.stringify({ providerId, days, count, prefix, note, subId })
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
