@@ -2471,6 +2471,7 @@ client.on('interactionCreate', async (interaction) => {
         const finalPrefix = (prefix && prefix.trim()) ? prefix.trim() : (providerId === 'mycheats' ? (serverPrefix || 'USER') : serverPrefix);
 
         try {
+          console.log(`[Discord Keys] Emisión en guild ${gId} (${providerId}) por @${user.tag} - Cuenta: "${provider.config?.username || provider.config?.sellerKey || 'Default'}"`);
           const items = await provider.createKey({
             days,
             count,

@@ -26,6 +26,7 @@ class MyCheatsProvider extends BaseProvider {
 
   async login() {
     try {
+      console.log(`[WorldCheats] Iniciando autenticación para usuario "${this.config.username}"...`);
       const getLogin = await this.client.get('/login');
       const csrfMatch = getLogin.data.match(/name="csrf_token"\s+value="([^"]+)"/);
       if (!csrfMatch) {
@@ -45,11 +46,27 @@ class MyCheatsProvider extends BaseProvider {
         },
       });
 
-      if (postLogin.request?.path?.includes('/login') && postLogin.data.includes('Invalid')) {
-        throw new Error('Credenciales inválidas en MyCheats');
+      if (postLogin.request?.path?.includes('/login') && (postLogin.data.includes('Invalid') || postLogin.data.includes('incorrect') || postLogin.data.includes('failed'))) {
+        throw new Error(`Credenciales inválidas en WorldCheats para usuario "${this.config.username}"`);
       }
 
       this.authenticated = true;
+
+      // Autodetectar app_id si la cuenta tiene aplicaciones propias visibles en el dashboard
+      try {
+        const dash = await this.client.get('/dashboard');
+        const appMatches = [...dash.data.matchAll(/page=app-users&app_id=(\d+)/g)].map((m) => m[1]);
+        if (appMatches.length > 0) {
+          const uniqueApps = [...new Set(appMatches)];
+          this.detectedAppId = uniqueApps[0];
+          console.log(`[WorldCheats] Cuenta "${this.config.username}" conectada. App(s) detectadas: ${uniqueApps.join(', ')}`);
+        } else {
+          console.log(`[WorldCheats] Cuenta "${this.config.username}" conectada exitosamente.`);
+        }
+      } catch (_) {
+        console.log(`[WorldCheats] Cuenta "${this.config.username}" conectada exitosamente.`);
+      }
+
       return true;
     } catch (err) {
       this.authenticated = false;
@@ -81,8 +98,10 @@ class MyCheatsProvider extends BaseProvider {
   async createKey({ days, count = 1, prefix = 'VIP', note = '' }) {
     await this.ensureAuth();
     const createdUsers = [];
-    const appId = this.config.appId || '146';
-    const subId = this.config.defaultSubId || '237';
+    const appId = (this.config.appId && String(this.config.appId).trim()) || this.detectedAppId || '146';
+    const subId = (this.config.defaultSubId && String(this.config.defaultSubId).trim()) || '237';
+
+    console.log(`[WorldCheats] Generando ${count} cuenta(s) en app_id=${appId}, sub_id=${subId} con credenciales de usuario="${this.config.username}"`);
 
     try {
       for (let i = 0; i < count; i++) {
@@ -113,17 +132,26 @@ class MyCheatsProvider extends BaseProvider {
           }
         );
 
+        if (res.request?.path?.includes('/login')) {
+          this.authenticated = false;
+          throw new Error('La sesión de WorldCheats caducó o fue redirigida al login al intentar crear el usuario.');
+        }
+
         if (res.data.includes('already exists') || res.data.includes('Username already taken')) {
           // Reintentar con otro sufijo
           const altUsername = `${cleanPrefix}_${Date.now().toString().slice(-4)}`;
           params.set('app_user_username', altUsername);
-          await this.client.post(
+          const retryRes = await this.client.post(
             `/dashboard?page=app-users&app_id=${appId}`,
             params.toString(),
             {
               headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             }
           );
+          if (retryRes.request?.path?.includes('/login')) {
+            this.authenticated = false;
+            throw new Error('La sesión de WorldCheats caducó al reintentar crear el usuario.');
+          }
           createdUsers.push({
             isUserAccount: true,
             username: altUsername,

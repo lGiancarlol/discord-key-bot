@@ -163,7 +163,15 @@ class Database {
               channels: { ...createDefaultGuildData(guildId).channels, ...(parsed.channels || {}) },
               branding: { ...createDefaultGuildData(guildId).branding, ...(parsed.branding || {}) },
               customTemplate: { ...createDefaultGuildData(guildId).customTemplate, ...(parsed.customTemplate || {}) },
-              providersConfig: { ...createDefaultGuildData(guildId).providersConfig, ...(parsed.providersConfig || {}) },
+              providersConfig: (() => {
+                const def = createDefaultGuildData(guildId).providersConfig;
+                const parsedProv = parsed.providersConfig || {};
+                const res = {};
+                for (const pId of Object.keys(def)) {
+                  res[pId] = { ...(def[pId] || {}), ...(parsedProv[pId] || {}) };
+                }
+                return res;
+              })(),
               keyStock: { ...createDefaultGuildData(guildId).keyStock, ...(parsed.keyStock || {}) },
               resellers: parsed.resellers || {},
               webAuditLogs: parsed.webAuditLogs || [],
@@ -401,8 +409,15 @@ class Database {
     if (newConfig.enabledProviders) {
       this.setEnabledProviders(guildId, newConfig.enabledProviders);
     }
-    if (newConfig.providersConfig) {
-      gData.providersConfig = { ...gData.providersConfig, ...newConfig.providersConfig };
+    if (newConfig.providersConfig && typeof newConfig.providersConfig === 'object') {
+      if (!gData.providersConfig) gData.providersConfig = {};
+      for (const [pId, pCfg] of Object.entries(newConfig.providersConfig)) {
+        if (!pCfg || typeof pCfg !== 'object') continue;
+        gData.providersConfig[pId] = {
+          ...(gData.providersConfig[pId] || {}),
+          ...pCfg,
+        };
+      }
     }
     if (newConfig.providersMetadata) {
       gData.providersMetadata = { ...(gData.providersMetadata || {}), ...newConfig.providersMetadata };

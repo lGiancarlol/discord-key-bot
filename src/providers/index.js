@@ -41,10 +41,13 @@ class ProviderManager {
       customCfg = gConfig?.providersConfig?.[id];
     }
 
-    // Si no hay configuración personalizada o está vacía, usar el proveedor por defecto
-    const hasCustomSettings =
-      customCfg &&
-      (customCfg.baseUrl || customCfg.username || customCfg.sellerKey || customCfg.enabled === false);
+    // Determinar si hay configuración personalizada activa y válida
+    const hasCustomUser = Boolean(customCfg?.username && String(customCfg.username).trim());
+    const hasCustomKey = Boolean(customCfg?.sellerKey && String(customCfg.sellerKey).trim());
+    const hasCustomUrl = Boolean(customCfg?.baseUrl && String(customCfg.baseUrl).trim());
+    const hasExplicitDisabled = customCfg?.enabled === false;
+
+    const hasCustomSettings = hasCustomUser || hasCustomKey || hasCustomUrl || hasExplicitDisabled;
 
     if (!hasCustomSettings) {
       return this.get(id);
@@ -60,12 +63,12 @@ class ProviderManager {
       ...baseConfig,
       ...customCfg,
       id,
-      baseUrl: customCfg.baseUrl || baseConfig.baseUrl,
-      username: customCfg.username || baseConfig.username,
-      password: customCfg.password || baseConfig.password,
-      sellerKey: customCfg.sellerKey || baseConfig.sellerKey,
-      appId: customCfg.appId || baseConfig.appId,
-      defaultSubId: customCfg.defaultSubId || baseConfig.defaultSubId,
+      baseUrl: (customCfg.baseUrl && String(customCfg.baseUrl).trim()) || baseConfig.baseUrl,
+      username: hasCustomUser ? String(customCfg.username).trim() : baseConfig.username,
+      password: (customCfg.password && String(customCfg.password).trim()) || baseConfig.password,
+      sellerKey: hasCustomKey ? String(customCfg.sellerKey).trim() : baseConfig.sellerKey,
+      appId: (customCfg.appId && String(customCfg.appId).trim()) || baseConfig.appId,
+      defaultSubId: (customCfg.defaultSubId && String(customCfg.defaultSubId).trim()) || baseConfig.defaultSubId,
     };
 
     let instance = null;
@@ -78,6 +81,7 @@ class ProviderManager {
     if (instance) {
       instance.guildId = guildId;
       instance.db = db;
+      console.log(`[ProviderManager] ⚡ Proveedor exclusivo activado para guild ${guildId} (${id}): usuario="${mergedConfig.username || 'KeyAuth'}" appId="${mergedConfig.appId || 'N/A'}"`);
     }
 
     this.guildProviders.set(cacheKey, instance);

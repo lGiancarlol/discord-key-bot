@@ -792,6 +792,16 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
                   <input type="password" id="cfg_mycheats_password" placeholder="••••••••" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500">
                 </div>
               </div>
+              <div class="grid grid-cols-2 gap-2 pt-1">
+                <div>
+                  <label class="block text-[11px] text-slate-400 mb-1">App ID (Opcional, autodetectable)</label>
+                  <input type="text" id="cfg_mycheats_appId" placeholder="Ej: 146 (dejar vacío para autodetección)" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+                </div>
+                <div>
+                  <label class="block text-[11px] text-slate-400 mb-1">Sub ID (Opcional)</label>
+                  <input type="text" id="cfg_mycheats_subId" placeholder="Ej: 237" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500">
+                </div>
+              </div>
             </div>
 
             <button type="submit" class="flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-medium text-sm rounded-xl transition">
@@ -1827,6 +1837,8 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         setVal('cfg_bypass_password', prov.bypass?.password || '');
         setVal('cfg_mycheats_username', prov.mycheats?.username || '');
         setVal('cfg_mycheats_password', prov.mycheats?.password || '');
+        setVal('cfg_mycheats_appId', prov.mycheats?.appId || '');
+        setVal('cfg_mycheats_subId', prov.mycheats?.defaultSubId || '');
 
         // Nombres y Descripciones de Páginas
         const meta = cfg.providersMetadata || {};
@@ -2298,6 +2310,8 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         mycheats: {
           username: document.getElementById('cfg_mycheats_username').value.trim(),
           password: document.getElementById('cfg_mycheats_password').value.trim(),
+          appId: document.getElementById('cfg_mycheats_appId').value.trim(),
+          defaultSubId: document.getElementById('cfg_mycheats_subId').value.trim(),
         }
       };
 

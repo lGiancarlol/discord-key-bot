@@ -445,6 +445,7 @@ function createWebServer(client) {
     }
 
     try {
+      console.log(`[Web Keys] Emisión en guild ${guildId} (${providerId}) por @${req.user.username} - Cuenta: "${provider.config?.username || provider.config?.sellerKey || 'Default'}"`);
       const items = await provider.createKey({
         days: Number(days),
         count: Number(count),
