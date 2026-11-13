@@ -7,12 +7,20 @@ const GUILDS_DIR = path.join(DB_DIR, 'guilds');
 const BACKUPS_DIR = path.join(DB_DIR, 'backups');
 const OLD_DB_FILE = path.join(DB_DIR, 'db.json');
 
+const DEFAULT_PROVIDER_METADATA = {
+  bypass: { name: 'Bypass APK', desc: 'Emisión de licencias', icon: '⚡' },
+  bypass_uid: { name: 'Bypass UID (Auto ON)', desc: 'Licencias con UID ON', icon: '🛡️' },
+  mycheats: { name: 'WorldCheats (Panel VIP)', desc: 'Cuentas de usuario', icon: '👤' },
+  keyauth: { name: 'KeyAuth (Elite Pro)', desc: 'Licencias oficiales', icon: '🔑' },
+};
+
 const getTodayKey = () => new Date().toISOString().slice(0, 10);
 
 const createDefaultGuildData = (guildId, guildName = '') => ({
   guildId,
   name: guildName || `Servidor ${guildId}`,
   enabledProviders: ['bypass', 'bypass_uid', 'mycheats', 'keyauth'],
+  providersMetadata: JSON.parse(JSON.stringify(DEFAULT_PROVIDER_METADATA)),
   channels: {
     panelChannelId: (guildId === config.discord.guildId ? config.discord.panelChannelId : '') || '',
     adminPanelChannelId: (guildId === config.discord.guildId ? config.discord.adminPanelChannelId : '') || '',
@@ -25,9 +33,13 @@ const createDefaultGuildData = (guildId, guildName = '') => ({
     defaultPrefix: 'VIP',
   },
   customTemplate: {
-    storeName: 'Auth Cloud Gateway',
+    storeName: '',
     noteText: 'Válida para 1 solo dispositivo.',
     footerText: '',
+    noEmojis: true,
+    wrapCodeBlock: false,
+    rawTemplate: '',
+    rawAccountTemplate: '',
   },
   webAuditLogs: [],
   providersConfig: {
@@ -142,6 +154,7 @@ class Database {
               ...createDefaultGuildData(guildId),
               ...parsed,
               enabledProviders: Array.isArray(parsed.enabledProviders) && parsed.enabledProviders.length > 0 ? parsed.enabledProviders : ['bypass', 'bypass_uid', 'mycheats', 'keyauth'],
+              providersMetadata: { ...createDefaultGuildData(guildId).providersMetadata, ...(parsed.providersMetadata || {}) },
               channels: { ...createDefaultGuildData(guildId).channels, ...(parsed.channels || {}) },
               branding: { ...createDefaultGuildData(guildId).branding, ...(parsed.branding || {}) },
               customTemplate: { ...createDefaultGuildData(guildId).customTemplate, ...(parsed.customTemplate || {}) },
@@ -290,18 +303,61 @@ class Database {
       guildId: gData.guildId,
       name: gData.name,
       enabledProviders: this.getEnabledProviders(guildId),
+      providersMetadata: this.getAllProvidersMetadata(guildId),
       channels: gData.channels || {},
       branding: gData.branding || {
         embedColor: '#2563eb',
         defaultPrefix: 'VIP',
       },
       customTemplate: gData.customTemplate || {
-        storeName: 'Auth Cloud Gateway',
+        storeName: '',
         noteText: 'Válida para 1 solo dispositivo.',
         footerText: '',
+        noEmojis: true,
+        wrapCodeBlock: false,
+        rawTemplate: '',
+        rawAccountTemplate: '',
       },
       providersConfig: gData.providersConfig || {},
     };
+  }
+
+  getProviderMetadata(guildId, providerId) {
+    const gData = this.getGuildData(guildId);
+    const custom = gData.providersMetadata?.[providerId] || {};
+    const fallback = DEFAULT_PROVIDER_METADATA[providerId] || { name: providerId, desc: '', icon: '🔑' };
+    return {
+      name: (custom.name && custom.name.trim()) ? custom.name.trim() : fallback.name,
+      desc: (custom.desc && custom.desc.trim()) ? custom.desc.trim() : fallback.desc,
+      icon: custom.icon || fallback.icon,
+    };
+  }
+
+  getAllProvidersMetadata(guildId) {
+    const gData = this.getGuildData(guildId);
+    const res = {};
+    for (const [id, def] of Object.entries(DEFAULT_PROVIDER_METADATA)) {
+      const custom = gData.providersMetadata?.[id] || {};
+      res[id] = {
+        name: (custom.name && custom.name.trim()) ? custom.name.trim() : def.name,
+        desc: (custom.desc && custom.desc.trim()) ? custom.desc.trim() : def.desc,
+        icon: custom.icon || def.icon,
+      };
+    }
+    return res;
+  }
+
+  setProviderMetadata(guildId, providerId, { name, desc }) {
+    const gData = this.getGuildData(guildId);
+    if (!gData.providersMetadata) gData.providersMetadata = {};
+    const current = gData.providersMetadata[providerId] || DEFAULT_PROVIDER_METADATA[providerId] || {};
+    gData.providersMetadata[providerId] = {
+      ...current,
+      name: name !== undefined ? name.trim() : current.name,
+      desc: desc !== undefined ? desc.trim() : current.desc,
+    };
+    this.saveGuild(guildId);
+    return this.getProviderMetadata(guildId, providerId);
   }
 
   getEnabledProviders(guildId) {
@@ -338,6 +394,9 @@ class Database {
     }
     if (newConfig.providersConfig) {
       gData.providersConfig = { ...gData.providersConfig, ...newConfig.providersConfig };
+    }
+    if (newConfig.providersMetadata) {
+      gData.providersMetadata = { ...(gData.providersMetadata || {}), ...newConfig.providersMetadata };
     }
     this.saveGuild(guildId);
     return this.getGuildConfig(guildId);
@@ -393,8 +452,9 @@ class Database {
     // Copiar marca y colores
     targetData.branding = JSON.parse(JSON.stringify(sourceData.branding || {}));
 
-    // Copiar plataformas habilitadas
+    // Copiar plataformas habilitadas y sus nombres personalizados
     targetData.enabledProviders = JSON.parse(JSON.stringify(sourceData.enabledProviders || ['bypass', 'bypass_uid', 'mycheats', 'keyauth']));
+    targetData.providersMetadata = JSON.parse(JSON.stringify(sourceData.providersMetadata || {}));
 
     // Copiar alertRoleId si existe
     if (sourceData.channels?.alertRoleId) {
@@ -644,40 +704,90 @@ class Database {
     record.timestamps.push(Date.now());
   }
 
-  // ── FORMATO DE PLANTILLA DE ENTREGA PERSONALIZABLE ──
+  // ── FORMATO DE PLANTILLA DE ENTREGA PERSONALIZABLE (WHATSAPP / TELEGRAM) ──
 
   formatForwardTemplate({ providerName, keyOrUser, days, isAccount = false, guildId = null }) {
     const gData = this.getGuildData(guildId);
     const tmpl = gData.customTemplate || {};
-    const storeName = tmpl.storeName ? `⭐ ${tmpl.storeName.toUpperCase()} ⭐\n` : '';
-    const noteText = tmpl.noteText || 'Válida para 1 solo dispositivo.';
-    const footerText = tmpl.footerText ? `\n💬 ${tmpl.footerText}` : '';
+
+    const store = tmpl.storeName ? tmpl.storeName.trim() : '';
+    const note = tmpl.noteText ? tmpl.noteText.trim() : 'Válida para 1 solo dispositivo.';
+    const footer = tmpl.footerText ? tmpl.footerText.trim() : '';
+    const noEmojis = tmpl.noEmojis !== false; // Modo limpio sin emojis por defecto (ideal para WhatsApp)
+    const wrapCode = tmpl.wrapCodeBlock === true; // Envolver en ```text o texto plano limpio
+    const today = new Date().toISOString().slice(0, 10);
+
+    let uname = '';
+    let pass = '';
+    if (isAccount) {
+      const parts = String(keyOrUser).includes(':') ? String(keyOrUser).split(':') : [keyOrUser, '1'];
+      uname = parts[0];
+      pass = parts[1] || '1';
+    } else {
+      pass = String(keyOrUser);
+    }
+
+    // 1. Plantilla 100% personalizada por el usuario (si configuró texto libre)
+    const customRaw = isAccount ? (tmpl.rawAccountTemplate || tmpl.rawTemplate) : tmpl.rawTemplate;
+    if (customRaw && customRaw.trim()) {
+      let output = customRaw
+        .replace(/{key}|{clave}|{password}|{pass}/gi, pass)
+        .replace(/{user}|{usuario}|{username}/gi, uname || 'N/A')
+        .replace(/{provider}|{plataforma}|{pagina}/gi, providerName)
+        .replace(/{days}|{dias}|{duracion}/gi, `${days} Días`)
+        .replace(/{days_num}|{num_dias}/gi, String(days))
+        .replace(/{store}|{tienda}/gi, store)
+        .replace(/{note}|{nota}/gi, note)
+        .replace(/{footer}|{pie}/gi, footer)
+        .replace(/{date}|{fecha}/gi, today);
+
+      return wrapCode ? `\`\`\`text\n${output.trim()}\n\`\`\`` : output.trim();
+    }
+
+    // 2. Modo Limpio para WhatsApp (Sin emojis, usando formato negrita estándar de WhatsApp)
+    if (noEmojis) {
+      let msg = '';
+      if (store) msg += `*${store.toUpperCase()}*\n\n`;
+      msg += `*DETALLES DE TU ACCESO*\n`;
+      msg += `Plataforma: ${providerName}\n`;
+      if (isAccount) {
+        msg += `Usuario: ${uname}\n`;
+        msg += `Contraseña: ${pass}\n`;
+      } else {
+        msg += `Clave: ${pass}\n`;
+      }
+      msg += `Duración: ${days} Días\n`;
+      if (note) msg += `Nota: ${note}\n`;
+      if (footer) msg += `\n${footer}\n`;
+
+      const cleanMsg = msg.trim();
+      return wrapCode ? `\`\`\`text\n${cleanMsg}\n\`\`\`` : cleanMsg;
+    }
+
+    // 3. Modo Clásico con Emojis
+    const storeHeader = store ? `⭐ ${store.toUpperCase()} ⭐\n` : '';
+    const footerLine = footer ? `\n💬 ${footer}` : '';
 
     if (isAccount) {
-      const [uname, pass] = String(keyOrUser).includes(':') ? String(keyOrUser).split(':') : [keyOrUser, '1'];
-      return (
-        '```text\n' +
-        storeName +
+      const msg =
+        storeHeader +
         `👤 Usuario: ${uname}\n` +
         `🔑 Contraseña: ${pass}\n` +
         `⏳ Duración: ${days} Días\n` +
         `📱 Plataforma: ${providerName}\n` +
-        `⚠️ Nota: ${noteText}` +
-        footerText +
-        '\n```'
-      );
+        `⚠️ Nota: ${note}` +
+        footerLine;
+      return wrapCode ? `\`\`\`text\n${msg}\n\`\`\`` : msg;
     }
 
-    return (
-      '```text\n' +
-      storeName +
-      `🔑 Clave: ${keyOrUser}\n` +
+    const msg =
+      storeHeader +
+      `🔑 Clave: ${pass}\n` +
       `⏳ Duración: ${days} Días\n` +
       `📱 Plataforma: ${providerName}\n` +
-      `⚠️ Nota: ${noteText}` +
-      footerText +
-      '\n```'
-    );
+      `⚠️ Nota: ${note}` +
+      footerLine;
+    return wrapCode ? `\`\`\`text\n${msg}\n\`\`\`` : msg;
   }
 
   // Permisos efectivos de un miembro en una guild
@@ -951,6 +1061,9 @@ class Database {
       deleteKeyRecord: (keyId) => this.deleteKeyRecord(keyId, gId),
       getEnabledProviders: () => this.getEnabledProviders(gId),
       setEnabledProviders: (arr) => this.setEnabledProviders(gId, arr),
+      getProviderMetadata: (pId) => this.getProviderMetadata(gId, pId),
+      getAllProvidersMetadata: () => this.getAllProvidersMetadata(gId),
+      setProviderMetadata: (pId, meta) => this.setProviderMetadata(gId, pId, meta),
       recordWebAuditLog: (params) => this.recordWebAuditLog(gId, params),
       getWebAuditLogs: (limit) => this.getWebAuditLogs(gId, limit),
       cloneConfigFrom: (sourceGuildId, operatorTag) => this.cloneConfig(sourceGuildId, gId, operatorTag),

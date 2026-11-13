@@ -29,7 +29,10 @@ function createPanelPayload(guildId = null, db = null) {
 
   const platformLines = enabled
     .map((pid) => {
-      const meta = PROVIDER_METADATA[pid];
+      let meta = PROVIDER_METADATA[pid];
+      if (guildId && db && typeof db.getProviderMetadata === 'function') {
+        meta = db.getProviderMetadata(guildId, pid);
+      }
       if (!meta) return null;
       return `│ ${meta.icon} **${meta.name}** ▸ ${meta.desc}`;
     })

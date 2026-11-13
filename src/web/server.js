@@ -467,13 +467,16 @@ function createWebServer(client) {
         });
       }
 
-      // Generar plantilla de WhatsApp personalizada para este servidor
+      // Generar plantilla de WhatsApp personalizada para este servidor con nombre de plataforma configurado
+      const pMeta = req.guildDb.getProviderMetadata ? req.guildDb.getProviderMetadata(providerId) : null;
+      const pDisplayName = pMeta?.name || provider.name;
+
       const forwardText = items
         .map((item) => {
           const val = typeof item === 'object' ? (item.username ? `${item.username}:1` : item.key) : item;
           const itemDays = typeof item === 'object' && item.days ? item.days : days;
           return req.guildDb.formatForwardTemplate({
-            providerName: provider.name,
+            providerName: pDisplayName,
             keyOrUser: val,
             days: itemDays,
             isAccount: providerId === 'mycheats',
@@ -595,20 +598,20 @@ function createWebServer(client) {
 
   // 12. Guardar Configuración de Servidor
   app.post('/api/guilds/:guildId/config', requireAuth, requireGuildAccess(client, db), async (req, res) => {
-    const { channels, customTemplate, providersConfig, branding, enabledProviders } = req.body;
-    const updated = req.guildDb.updateConfig({ channels, customTemplate, providersConfig, branding, enabledProviders });
+    const { channels, customTemplate, providersConfig, branding, enabledProviders, providersMetadata } = req.body;
+    const updated = req.guildDb.updateConfig({ channels, customTemplate, providersConfig, branding, enabledProviders, providersMetadata });
     providerManager.invalidateGuild(req.params.guildId);
 
     req.guildDb.recordWebAuditLog({
       operatorTag: req.user.username,
       operatorId: req.user.id,
       action: 'UPDATE_CONFIG',
-      details: enabledProviders ? `Plataformas activas actualizadas: ${enabledProviders.join(', ')}` : 'Configuración de canales, credenciales o marca actualizada.',
+      details: enabledProviders ? `Plataformas activas actualizadas: ${enabledProviders.join(', ')}` : (providersMetadata ? 'Nombres y descripciones de plataformas actualizados.' : 'Configuración de canales, credenciales o plantilla actualizada.'),
       ip: req.ip,
     });
 
-    // Si se modificaron las plataformas activas y hay un canal de panel configurado, intentar actualizar el embed en Discord en vivo
-    if (enabledProviders) {
+    // Si se modificaron las plataformas activas, nombres/descripciones o color de marca, intentar actualizar el embed en Discord en vivo
+    if (enabledProviders || providersMetadata || branding) {
       const panelChanId = updated.channels?.panelChannelId;
       if (panelChanId) {
         try {

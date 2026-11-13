@@ -575,6 +575,89 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         </form>
       </div>
 
+      <!-- Personalización de Nombres y Descripciones de Páginas -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+        <div class="border-b border-slate-800 pb-3">
+          <h3 class="text-base font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-tags text-amber-400"></i> Nombres & Descripciones de Páginas (Este Servidor)
+          </h3>
+          <p class="text-xs text-slate-400 mt-1">
+            Personaliza el nombre y descripción de cada página. Estos nombres aparecerán en el panel de Discord, en los menús de selección y en los mensajes de entrega para tus clientes.
+          </p>
+        </div>
+
+        <form id="formProvidersMetadata" onsubmit="saveProvidersMetadata(event)" class="space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Bypass APK -->
+            <div class="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2.5">
+              <span class="text-xs font-bold text-white flex items-center gap-1.5 border-b border-slate-800/80 pb-2">
+                ⚡ Bypass APK
+              </span>
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Nombre Visible</label>
+                <input type="text" id="cfg_meta_bypass_name" placeholder="Bypass APK" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Descripción / Subtítulo</label>
+                <input type="text" id="cfg_meta_bypass_desc" placeholder="Emisión de licencias" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+            </div>
+
+            <!-- Bypass UID -->
+            <div class="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2.5">
+              <span class="text-xs font-bold text-white flex items-center gap-1.5 border-b border-slate-800/80 pb-2">
+                🛡️ Bypass UID (Auto ON)
+              </span>
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Nombre Visible</label>
+                <input type="text" id="cfg_meta_bypass_uid_name" placeholder="Bypass UID (Auto ON)" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Descripción / Subtítulo</label>
+                <input type="text" id="cfg_meta_bypass_uid_desc" placeholder="Licencias con UID ON" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+            </div>
+
+            <!-- WorldCheats / MyCheats -->
+            <div class="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2.5">
+              <span class="text-xs font-bold text-white flex items-center gap-1.5 border-b border-slate-800/80 pb-2">
+                👤 WorldCheats (Panel VIP)
+              </span>
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Nombre Visible</label>
+                <input type="text" id="cfg_meta_mycheats_name" placeholder="WorldCheats (Panel VIP)" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Descripción / Subtítulo</label>
+                <input type="text" id="cfg_meta_mycheats_desc" placeholder="Cuentas de usuario" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+            </div>
+
+            <!-- KeyAuth -->
+            <div class="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2.5">
+              <span class="text-xs font-bold text-white flex items-center gap-1.5 border-b border-slate-800/80 pb-2">
+                🔑 KeyAuth (Elite Pro)
+              </span>
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Nombre Visible</label>
+                <input type="text" id="cfg_meta_keyauth_name" placeholder="KeyAuth (Elite Pro)" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Descripción / Subtítulo</label>
+                <input type="text" id="cfg_meta_keyauth_desc" placeholder="Licencias oficiales" class="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end pt-2">
+            <button type="submit" id="btnSaveMetadata" class="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-medium text-sm rounded-xl transition shadow-lg shadow-amber-600/20 flex items-center gap-2">
+              <i class="fa-solid fa-floppy-disk text-xs"></i>
+              <span>Guardar Nombres de Páginas</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
       <!-- Fila 1: Canales de Discord y Credenciales Exclusivas -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <!-- Canales de Discord -->
@@ -775,35 +858,81 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
 
       <!-- Fila 3: Plantilla de Entrega y Respaldos -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <!-- Plantilla de Entrega (WhatsApp / Telegram) -->
+        <!-- Plantilla Personalizada de Entrega (WhatsApp) -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-          <h3 class="text-base font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
-            <i class="fa-brands fa-whatsapp text-emerald-400"></i> Plantilla de Entrega (WhatsApp)
-          </h3>
-          <p class="text-xs text-slate-400">Personaliza el formato del mensaje que recibirán tus clientes cuando se generen licencias en Discord o en este Panel Web.</p>
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div>
+              <h3 class="text-base font-bold text-white flex items-center gap-2">
+                <i class="fa-brands fa-whatsapp text-emerald-400"></i> Plantilla de Entrega (WhatsApp)
+              </h3>
+              <p class="text-xs text-slate-400 mt-1">Personaliza el mensaje que recibirán tus clientes por WhatsApp al generar licencias o cuentas en este servidor.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="loadCleanTemplatePreset()" class="px-2.5 py-1 text-xs bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800/60 rounded-lg transition font-medium">
+                Sin Emojis (WhatsApp)
+              </button>
+              <button type="button" onclick="loadEmojiTemplatePreset()" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition">
+                Con Emojis
+              </button>
+            </div>
+          </div>
 
           <form id="formCustomTemplate" onsubmit="saveCustomTemplate(event)" class="space-y-4">
-            <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Nombre de la Tienda / Encabezado</label>
-              <input type="text" id="cfg_template_storeName" oninput="updateTemplatePreview()" placeholder="Gian Store VIP" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">Nombre de la Tienda / Encabezado (Opcional)</label>
+                <input type="text" id="cfg_template_storeName" oninput="updateTemplatePreview()" placeholder="Gian Store VIP" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">Texto de Advertencia / Nota</label>
+                <input type="text" id="cfg_template_noteText" oninput="updateTemplatePreview()" placeholder="Válida para 1 solo dispositivo." class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
             </div>
 
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Texto de Advertencia / Nota</label>
-              <input type="text" id="cfg_template_noteText" oninput="updateTemplatePreview()" placeholder="Válida para 1 solo dispositivo." class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
-            </div>
-
-            <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Pie de Mensaje / Contacto & Soporte</label>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Pie de Mensaje / Contacto & Soporte (Opcional)</label>
               <input type="text" id="cfg_template_footerText" oninput="updateTemplatePreview()" placeholder="Soporte: +58 412... | Discord: discord.gg/..." class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-brand-500">
             </div>
 
-            <div>
-              <label class="block text-[11px] text-slate-400 mb-1.5 uppercase tracking-wider font-semibold">Vista Previa en Vivo</label>
-              <pre id="templatePreviewBox" class="p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-emerald-400 select-all whitespace-pre-wrap"></pre>
+            <div class="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+              <div class="flex flex-wrap items-center gap-6">
+                <label class="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-300">
+                  <input type="checkbox" id="cfg_template_noEmojis" onchange="updateTemplatePreview()" class="rounded bg-slate-800 border-slate-700 text-emerald-500 focus:ring-0">
+                  <span>🚫 Modo Limpio: Sin Emojis (Recomendado WhatsApp)</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-300">
+                  <input type="checkbox" id="cfg_template_wrapCodeBlock" onchange="updateTemplatePreview()" class="rounded bg-slate-800 border-slate-700 text-emerald-500 focus:ring-0">
+                  <span>Envolver en bloque de código (formato Discord)</span>
+                </label>
+              </div>
             </div>
 
-            <button type="submit" class="flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm rounded-xl transition">
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block text-xs font-medium text-slate-300">
+                  Mensaje Personalizado Libre para Claves (Opcional)
+                </label>
+                <span class="text-[11px] text-slate-500 font-mono">{key}, {provider}, {days}, {store}, {note}, {footer}</span>
+              </div>
+              <textarea id="cfg_template_rawTemplate" oninput="updateTemplatePreview()" rows="3" placeholder="*DETALLES DE TU ACCESO*&#10;Plataforma: {provider}&#10;Clave: {key}&#10;Duración: {days}&#10;Nota: {note}&#10;{footer}" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-200 focus:outline-none focus:border-emerald-500"></textarea>
+            </div>
+
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block text-xs font-medium text-slate-300">
+                  Mensaje Personalizado Libre para Cuentas (WorldCheats) (Opcional)
+                </label>
+                <span class="text-[11px] text-slate-500 font-mono">{user}, {key}, {provider}, {days}, {note}</span>
+              </div>
+              <textarea id="cfg_template_rawAccountTemplate" oninput="updateTemplatePreview()" rows="3" placeholder="*DETALLES DE TU ACCESO*&#10;Plataforma: {provider}&#10;Usuario: {user}&#10;Contraseña: {key}&#10;Duración: {days}&#10;Nota: {note}" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-200 focus:outline-none focus:border-emerald-500"></textarea>
+            </div>
+
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-1.5 uppercase tracking-wider font-semibold">Vista Previa en Vivo (WhatsApp)</label>
+              <pre id="templatePreviewBox" class="p-4 bg-slate-950 border border-emerald-900/40 rounded-xl text-xs font-mono text-emerald-400 select-all whitespace-pre-wrap"></pre>
+            </div>
+
+            <button type="submit" id="btnSaveTemplate" class="flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm rounded-xl transition shadow-lg shadow-emerald-600/20">
               <i class="fa-solid fa-floppy-disk text-xs"></i>
               <span>Guardar Plantilla de Entrega</span>
             </button>
@@ -1594,11 +1723,27 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         document.getElementById('cfg_mycheats_username').value = prov.mycheats?.username || '';
         document.getElementById('cfg_mycheats_password').value = prov.mycheats?.password || '';
 
+        // Nombres y Descripciones de Páginas
+        const meta = cfg.providersMetadata || {};
+        window.currentProvidersMetadata = meta;
+        if (document.getElementById('cfg_meta_bypass_name')) document.getElementById('cfg_meta_bypass_name').value = meta.bypass?.name || 'Bypass APK';
+        if (document.getElementById('cfg_meta_bypass_desc')) document.getElementById('cfg_meta_bypass_desc').value = meta.bypass?.desc || 'Emisión de licencias';
+        if (document.getElementById('cfg_meta_bypass_uid_name')) document.getElementById('cfg_meta_bypass_uid_name').value = meta.bypass_uid?.name || 'Bypass UID (Auto ON)';
+        if (document.getElementById('cfg_meta_bypass_uid_desc')) document.getElementById('cfg_meta_bypass_uid_desc').value = meta.bypass_uid?.desc || 'Licencias con UID ON';
+        if (document.getElementById('cfg_meta_mycheats_name')) document.getElementById('cfg_meta_mycheats_name').value = meta.mycheats?.name || 'WorldCheats (Panel VIP)';
+        if (document.getElementById('cfg_meta_mycheats_desc')) document.getElementById('cfg_meta_mycheats_desc').value = meta.mycheats?.desc || 'Cuentas de usuario';
+        if (document.getElementById('cfg_meta_keyauth_name')) document.getElementById('cfg_meta_keyauth_name').value = meta.keyauth?.name || 'KeyAuth (Elite Pro)';
+        if (document.getElementById('cfg_meta_keyauth_desc')) document.getElementById('cfg_meta_keyauth_desc').value = meta.keyauth?.desc || 'Licencias oficiales';
+
         // Plantilla de Entrega Personalizable
         const tmpl = cfg.customTemplate || {};
         document.getElementById('cfg_template_storeName').value = tmpl.storeName || '';
         document.getElementById('cfg_template_noteText').value = tmpl.noteText || 'Válida para 1 solo dispositivo.';
         document.getElementById('cfg_template_footerText').value = tmpl.footerText || '';
+        if (document.getElementById('cfg_template_noEmojis')) document.getElementById('cfg_template_noEmojis').checked = tmpl.noEmojis !== false;
+        if (document.getElementById('cfg_template_wrapCodeBlock')) document.getElementById('cfg_template_wrapCodeBlock').checked = tmpl.wrapCodeBlock === true;
+        if (document.getElementById('cfg_template_rawTemplate')) document.getElementById('cfg_template_rawTemplate').value = tmpl.rawTemplate || '';
+        if (document.getElementById('cfg_template_rawAccountTemplate')) document.getElementById('cfg_template_rawAccountTemplate').value = tmpl.rawAccountTemplate || '';
         updateTemplatePreview();
 
         // Enlace de descarga de Backup
@@ -1737,11 +1882,12 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       const select = document.getElementById('gen_provider');
       if (!select) return;
 
+      const meta = window.currentProvidersMetadata || {};
       const providerMap = {
-        keyauth: 'KeyAuth (Elite Pro)',
-        bypass: 'Bypass APK',
-        bypass_uid: 'Bypass UID (Auto ON)',
-        mycheats: 'WorldCheats (Panel VIP)'
+        keyauth: meta.keyauth?.name || 'KeyAuth (Elite Pro)',
+        bypass: meta.bypass?.name || 'Bypass APK',
+        bypass_uid: meta.bypass_uid?.name || 'Bypass UID (Auto ON)',
+        mycheats: meta.mycheats?.name || 'WorldCheats (Panel VIP)'
       };
 
       const curVal = select.value;
@@ -1864,21 +2010,116 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       }
     }
 
+    async function saveProvidersMetadata(e) {
+      e.preventDefault();
+      const providersMetadata = {
+        bypass: {
+          name: document.getElementById('cfg_meta_bypass_name').value.trim(),
+          desc: document.getElementById('cfg_meta_bypass_desc').value.trim(),
+        },
+        bypass_uid: {
+          name: document.getElementById('cfg_meta_bypass_uid_name').value.trim(),
+          desc: document.getElementById('cfg_meta_bypass_uid_desc').value.trim(),
+        },
+        mycheats: {
+          name: document.getElementById('cfg_meta_mycheats_name').value.trim(),
+          desc: document.getElementById('cfg_meta_mycheats_desc').value.trim(),
+        },
+        keyauth: {
+          name: document.getElementById('cfg_meta_keyauth_name').value.trim(),
+          desc: document.getElementById('cfg_meta_keyauth_desc').value.trim(),
+        },
+      };
+
+      try {
+        const res = await fetch('/api/guilds/' + currentGuildId + '/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ providersMetadata })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        window.currentProvidersMetadata = providersMetadata;
+        showToast('Nombres y descripciones de páginas guardados.');
+        const enabledP = [];
+        if (document.getElementById('plat_check_bypass')?.checked) enabledP.push('bypass');
+        if (document.getElementById('plat_check_bypass_uid')?.checked) enabledP.push('bypass_uid');
+        if (document.getElementById('plat_check_mycheats')?.checked) enabledP.push('mycheats');
+        if (document.getElementById('plat_check_keyauth')?.checked) enabledP.push('keyauth');
+        updateGeneratorProviderOptions(enabledP);
+        updateTemplatePreview();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
     function updateTemplatePreview() {
       const store = document.getElementById('cfg_template_storeName')?.value.trim();
       const note = document.getElementById('cfg_template_noteText')?.value.trim() || 'Válida para 1 solo dispositivo.';
       const footer = document.getElementById('cfg_template_footerText')?.value.trim();
+      const noEmojis = document.getElementById('cfg_template_noEmojis')?.checked !== false;
+      const wrapCode = document.getElementById('cfg_template_wrapCodeBlock')?.checked === true;
+      const raw = document.getElementById('cfg_template_rawTemplate')?.value;
+      const pName = document.getElementById('cfg_meta_keyauth_name')?.value.trim() || 'KeyAuth (Elite Pro)';
+      const box = document.getElementById('templatePreviewBox');
+      if (!box) return;
+
+      if (raw && raw.trim()) {
+        let txt = raw
+          .replace(/{key}|{clave}|{password}|{pass}/gi, 'Tryhard-3BxbSVFBhxP')
+          .replace(/{user}|{usuario}|{username}/gi, 'gian_vip')
+          .replace(/{provider}|{plataforma}|{pagina}/gi, pName)
+          .replace(/{days}|{dias}|{duracion}/gi, '30 Días')
+          .replace(/{days_num}|{num_dias}/gi, '30')
+          .replace(/{store}|{tienda}/gi, store || 'TIENDA VIP')
+          .replace(/{note}|{nota}/gi, note)
+          .replace(/{footer}|{pie}/gi, footer || '')
+          .replace(/{date}|{fecha}/gi, new Date().toISOString().slice(0, 10));
+        box.innerText = wrapCode ? ('\`\`\`text\n' + txt.trim() + '\n\`\`\`') : txt.trim();
+        return;
+      }
+
+      if (noEmojis) {
+        let msg = '';
+        if (store) msg += '*' + store.toUpperCase() + '*\n\n';
+        msg += '*DETALLES DE TU ACCESO*\n';
+        msg += 'Plataforma: ' + pName + '\n';
+        msg += 'Clave: Tryhard-3BxbSVFBhxP\n';
+        msg += 'Duración: 30 Días\n';
+        if (note) msg += 'Nota: ' + note + '\n';
+        if (footer) msg += '\n' + footer + '\n';
+        box.innerText = wrapCode ? ('\`\`\`text\n' + msg.trim() + '\n\`\`\`') : msg.trim();
+        return;
+      }
 
       const lines = [];
       if (store) lines.push('⭐ ' + store.toUpperCase() + ' ⭐');
       lines.push('🔑 Clave: Tryhard-3BxbSVFBhxP');
       lines.push('⏳ Duración: 30 Días');
-      lines.push('📱 Plataforma: KeyAuth (Elite Pro)');
+      lines.push('📱 Plataforma: ' + pName);
       lines.push('⚠️ Nota: ' + note);
       if (footer) lines.push('💬 ' + footer);
 
-      const box = document.getElementById('templatePreviewBox');
-      if (box) box.innerText = lines.join(String.fromCharCode(10));
+      const content = lines.join('\n');
+      box.innerText = wrapCode ? ('\`\`\`text\n' + content + '\n\`\`\`') : content;
+    }
+
+    function loadCleanTemplatePreset() {
+      if (document.getElementById('cfg_template_noEmojis')) document.getElementById('cfg_template_noEmojis').checked = true;
+      if (document.getElementById('cfg_template_wrapCodeBlock')) document.getElementById('cfg_template_wrapCodeBlock').checked = false;
+      if (document.getElementById('cfg_template_rawTemplate')) document.getElementById('cfg_template_rawTemplate').value = '';
+      if (document.getElementById('cfg_template_rawAccountTemplate')) document.getElementById('cfg_template_rawAccountTemplate').value = '';
+      updateTemplatePreview();
+      showToast('Plantilla limpia sin emojis cargada.');
+    }
+
+    function loadEmojiTemplatePreset() {
+      if (document.getElementById('cfg_template_noEmojis')) document.getElementById('cfg_template_noEmojis').checked = false;
+      if (document.getElementById('cfg_template_wrapCodeBlock')) document.getElementById('cfg_template_wrapCodeBlock').checked = false;
+      if (document.getElementById('cfg_template_rawTemplate')) document.getElementById('cfg_template_rawTemplate').value = '';
+      if (document.getElementById('cfg_template_rawAccountTemplate')) document.getElementById('cfg_template_rawAccountTemplate').value = '';
+      updateTemplatePreview();
+      showToast('Plantilla con emojis cargada.');
     }
 
     async function saveCustomTemplate(e) {
@@ -1887,6 +2128,10 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
         storeName: document.getElementById('cfg_template_storeName').value.trim(),
         noteText: document.getElementById('cfg_template_noteText').value.trim(),
         footerText: document.getElementById('cfg_template_footerText').value.trim(),
+        noEmojis: document.getElementById('cfg_template_noEmojis').checked,
+        wrapCodeBlock: document.getElementById('cfg_template_wrapCodeBlock').checked,
+        rawTemplate: document.getElementById('cfg_template_rawTemplate').value,
+        rawAccountTemplate: document.getElementById('cfg_template_rawAccountTemplate').value,
       };
 
       try {

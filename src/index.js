@@ -135,12 +135,17 @@ function getUserAuditInfo(member, user, cfg = config, guildId = null) {
   };
 }
 
-// Log a canal de auditoría (por servidor) con mención de rol de alerta si corresponde
+// Log a canal de auditoría (estrictamente aislado por servidor) con mención de rol de alerta si corresponde
 async function logToAdminChannel(embed, guildId = null, isAlert = false) {
+  // Si no se especifica guildId, solo usar el servidor principal por defecto
   const gId = guildId || config.discord.guildId;
+  if (!gId) return;
+
   const gConfig = db.forGuild(gId).getConfig();
-  const targetChannelId = gConfig?.channels?.logsChannelId || (gId === config.discord.guildId ? config.discord.logsChannelId : null);
-  if (!targetChannelId) return;
+  // Aislamiento estricto: cada servidor envía exclusivamente a su propio canal de logs
+  const targetChannelId = gConfig?.channels?.logsChannelId || (guildId === null ? config.discord.logsChannelId : null);
+  if (!targetChannelId) return; // Si este servidor no configuró canal de logs, no contaminar el canal de otro servidor
+
   try {
     const channel = await client.channels.fetch(targetChannelId).catch(() => null);
     if (channel && channel.isTextBased()) {
@@ -174,11 +179,12 @@ const PROVIDER_NAMES = {
 
 async function showPlatformsConfigMenu(interaction, guildId, database) {
   const currentEnabled = database.getEnabledProviders(guildId);
+  const metadata = database.getAllProvidersMetadata(guildId);
   const allProviders = [
-    { label: 'Bypass APK', value: 'bypass', description: 'Emisión de licencias Bypass' },
-    { label: 'Bypass UID (Auto ON)', value: 'bypass_uid', description: 'Licencias Bypass con UID activado' },
-    { label: 'WorldCheats (Panel VIP)', value: 'mycheats', description: 'Cuentas de usuario WorldCheats' },
-    { label: 'KeyAuth (Elite Pro)', value: 'keyauth', description: 'Licencias oficiales KeyAuth' },
+    { label: metadata.bypass.name.slice(0, 100), value: 'bypass', description: metadata.bypass.desc.slice(0, 100) },
+    { label: metadata.bypass_uid.name.slice(0, 100), value: 'bypass_uid', description: metadata.bypass_uid.desc.slice(0, 100) },
+    { label: metadata.mycheats.name.slice(0, 100), value: 'mycheats', description: metadata.mycheats.desc.slice(0, 100) },
+    { label: metadata.keyauth.name.slice(0, 100), value: 'keyauth', description: metadata.keyauth.desc.slice(0, 100) },
   ];
 
   const options = allProviders.map((p) => ({
@@ -204,7 +210,7 @@ async function showPlatformsConfigMenu(interaction, guildId, database) {
     )
     .addFields({
       name: 'Actualmente Habilitadas:',
-      value: currentEnabled.map((p) => `• **${PROVIDER_NAMES[p] || p}**`).join('\n') || 'Ninguna',
+      value: currentEnabled.map((p) => `• **${metadata[p]?.name || p}**`).join('\n') || 'Ninguna',
     })
     .setFooter({ text: 'Sistema de Configuración Multi-Servidor' });
 
@@ -1207,13 +1213,13 @@ client.on('interactionCreate', async (interaction) => {
 
     // 2. BOTONES DEL PANEL
     if (interaction.isButton()) {
-      const { customId, member, user } = interaction;
-      const perms = db.getUserPermissions(member, config);
+      const { customId, member, user, guildId } = interaction;
+      const perms = db.getUserPermissions(member, config, guildId);
 
       // ── BOTONES EXCLUSIVOS DEL PANEL ADMINISTRATIVO ──
       if (customId.startsWith('admin_btn_')) {
         if (!perms.isAdmin) {
-          const audit = getUserAuditInfo(member, user, config);
+          const audit = getUserAuditInfo(member, user, config, guildId);
           await logToAdminChannel(
             new EmbedBuilder()
               .setColor(0x64748b)
@@ -1225,7 +1231,8 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Acción Bloqueada', value: `Botón: \`${customId}\``, inline: false }
               )
               .setFooter({ text: 'Sistema de Seguridad • Auth Gateway' })
-              .setTimestamp()
+              .setTimestamp(),
+            guildId
           );
           return interaction.reply({
             content: '⛔ **Acceso denegado:** Solo los Administradores del Bot tienen permiso para interactuar con este panel.',
@@ -1346,7 +1353,7 @@ client.on('interactionCreate', async (interaction) => {
       // GENERAR KEY
       if (customId === 'btn_create_key') {
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
-          const audit = getUserAuditInfo(member, user, config);
+          const audit = getUserAuditInfo(member, user, config, guildId);
           await logToAdminChannel(
             new EmbedBuilder()
               .setColor(0x64748b)
@@ -1358,7 +1365,8 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Acción Intentada', value: 'Generar Clave', inline: false }
               )
               .setFooter({ text: 'Sistema de Seguridad • Auth Gateway' })
-              .setTimestamp()
+              .setTimestamp(),
+            guildId
           );
           return interaction.reply({
             content: '⛔ **Acceso denegado:** No estás registrado como revendedor (o tu membresía ha expirado).\nEl administrador debe activarte con `/revendedor asignar @usuario dias:<días> plataformas:<lista>`',
@@ -1380,13 +1388,14 @@ client.on('interactionCreate', async (interaction) => {
           );
         }
 
-        // Filtrar plataformas autorizadas
+        // Filtrar plataformas autorizadas con sus nombres y descripciones personalizadas del servidor
+        const gMeta = db.getAllProvidersMetadata(interaction.guildId);
         const options = perms.allowedProviders.map((pid) => {
-          const p = providerManager.get(pid);
+          const meta = gMeta[pid] || { name: pid, desc: `Generar en ${pid}` };
           return {
-            label: p ? p.name : pid,
+            label: meta.name.slice(0, 100),
             value: pid,
-            description: `Generar en ${p ? p.name : pid}`,
+            description: (meta.desc || `Generar en ${meta.name}`).slice(0, 100),
           };
         });
 
@@ -1407,7 +1416,7 @@ client.on('interactionCreate', async (interaction) => {
       // ELIMINAR KEY
       if (customId === 'btn_delete_key') {
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
-          const audit = getUserAuditInfo(member, user, config);
+          const audit = getUserAuditInfo(member, user, config, guildId);
           await logToAdminChannel(
             new EmbedBuilder()
               .setColor(0x64748b)
@@ -1419,7 +1428,8 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Acción Intentada', value: 'Eliminar Clave', inline: false }
               )
               .setFooter({ text: 'Sistema de Seguridad • Auth Gateway' })
-              .setTimestamp()
+              .setTimestamp(),
+            guildId
           );
           return interaction.reply({
             content: '⛔ **Acceso denegado:** No tienes una membresía de revendedor activa.',
@@ -1462,7 +1472,7 @@ client.on('interactionCreate', async (interaction) => {
       // RESET HWID
       if (customId === 'btn_reset_hwid') {
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
-          const audit = getUserAuditInfo(member, user, config);
+          const audit = getUserAuditInfo(member, user, config, guildId);
           await logToAdminChannel(
             new EmbedBuilder()
               .setColor(0x64748b)
@@ -1474,7 +1484,8 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Acción Intentada', value: 'Restablecer HWID', inline: false }
               )
               .setFooter({ text: 'Sistema de Seguridad • Auth Gateway' })
-              .setTimestamp()
+              .setTimestamp(),
+            guildId
           );
           return interaction.reply({
             content: '⛔ **Acceso denegado:** No tienes una membresía de revendedor activa.',
@@ -1791,8 +1802,8 @@ client.on('interactionCreate', async (interaction) => {
           .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
           .setTimestamp();
 
-        const opAudit = getUserAuditInfo(member, user, config);
-        const targetAudit = getUserAuditInfo(null, { id: targetId }, config);
+        const opAudit = getUserAuditInfo(member, user, config, interaction.guildId);
+        const targetAudit = getUserAuditInfo(null, { id: targetId }, config, interaction.guildId);
         await logToAdminChannel(
           new EmbedBuilder()
             .setColor(0x16a34a)
@@ -1807,7 +1818,8 @@ client.on('interactionCreate', async (interaction) => {
               { name: 'Plataformas Autorizadas', value: platNames.join(', '), inline: false }
             )
             .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-            .setTimestamp()
+            .setTimestamp(),
+          interaction.guildId
         );
 
         return interaction.update({
@@ -1854,8 +1866,8 @@ client.on('interactionCreate', async (interaction) => {
           .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
           .setTimestamp();
 
-        const opAudit = getUserAuditInfo(member, user, config);
-        const targetAudit = getUserAuditInfo(null, { id: targetId }, config);
+        const opAudit = getUserAuditInfo(member, user, config, interaction.guildId);
+        const targetAudit = getUserAuditInfo(null, { id: targetId }, config, interaction.guildId);
         await logToAdminChannel(
           new EmbedBuilder()
             .setColor(0x2563eb)
@@ -1868,7 +1880,8 @@ client.on('interactionCreate', async (interaction) => {
               { name: 'Plataformas Autorizadas', value: platNames.join(', '), inline: false }
             )
             .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-            .setTimestamp()
+            .setTimestamp(),
+          interaction.guildId
         );
 
         return interaction.update({
@@ -2030,10 +2043,10 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
-        const removed = db.removeReseller(targetId);
+        const removed = db.removeReseller(targetId, interaction.guildId);
 
         if (removed) {
-          const opAudit = getUserAuditInfo(member, user, config);
+          const opAudit = getUserAuditInfo(member, user, config, interaction.guildId);
           await logToAdminChannel(
             new EmbedBuilder()
               .setColor(0xdc2626)
@@ -2045,7 +2058,8 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Origen', value: 'Panel Administrativo Interactivo', inline: false }
               )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-              .setTimestamp()
+              .setTimestamp(),
+            interaction.guildId
           );
         }
 
@@ -2135,8 +2149,9 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
-        const result = db.addStock(providerId, keysList, dias);
-        const pName = config.providers[providerId]?.name || providerId;
+        const result = db.addStock(providerId, keysList, dias, interaction.guildId);
+        const pMeta = db.getProviderMetadata(interaction.guildId, providerId);
+        const pName = pMeta?.name || config.providers[providerId]?.name || providerId;
 
         const embed = new EmbedBuilder()
           .setColor(0x2ecc71)
@@ -2150,7 +2165,7 @@ client.on('interactionCreate', async (interaction) => {
           .setFooter({ text: 'Panel Administrativo • Auth Gateway' })
           .setTimestamp();
 
-        const opAudit = getUserAuditInfo(member, user, config);
+        const opAudit = getUserAuditInfo(member, user, config, interaction.guildId);
         await logToAdminChannel(
           new EmbedBuilder()
             .setColor(0x16a34a)
@@ -2164,7 +2179,8 @@ client.on('interactionCreate', async (interaction) => {
               { name: 'Stock Total Disponible', value: `${result.total} claves`, inline: true }
             )
             .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
-            .setTimestamp()
+            .setTimestamp(),
+          interaction.guildId
         );
 
         return interaction.reply({ embeds: [embed], ephemeral: true });
@@ -2309,13 +2325,16 @@ client.on('interactionCreate', async (interaction) => {
             }, gId);
           }
 
-          // Plantillas de Reenvío para WhatsApp
+          // Plantillas de Reenvío para WhatsApp con el nombre personalizado del servidor
+          const pMeta = db.getProviderMetadata(gId, providerId);
+          const pDisplayName = pMeta?.name || provider.name;
+
           const forwardTemplates = items
             .map((item) => {
               const val = typeof item === 'object' ? (item.username ? `${item.username}:1` : item.key) : item;
               const itemDays = typeof item === 'object' && item.days ? item.days : days;
               return getForwardTemplate({
-                providerName: provider.name,
+                providerName: pDisplayName,
                 keyOrUser: val,
                 days: itemDays,
                 isAccount: providerId === 'mycheats',
@@ -2326,7 +2345,7 @@ client.on('interactionCreate', async (interaction) => {
 
           const successEmbed = new EmbedBuilder()
             .setColor(0x00d2d3)
-            .setTitle(`✅ ${providerId === 'mycheats' ? 'Cuenta Creada' : 'Licencia Creada'} (${provider.name})`)
+            .setTitle(`✅ ${providerId === 'mycheats' ? 'Cuenta Creada' : 'Licencia Creada'} (${pDisplayName})`)
             .setDescription(
               `Copia el siguiente recuadro para enviarlo directamente a tu cliente por WhatsApp:\n\n` +
                 forwardTemplates +
