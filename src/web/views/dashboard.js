@@ -1685,29 +1685,38 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       try {
         const res = await fetch(\`/api/guilds/\${currentGuildId}/config\`);
         const cfg = await res.json();
-        
+
+        const setVal = (id, val) => {
+          const el = document.getElementById(id);
+          if (el) el.value = (val !== undefined && val !== null) ? val : '';
+        };
+        const setCheck = (id, val) => {
+          const el = document.getElementById(id);
+          if (el) el.checked = !!val;
+        };
+
         // Páginas Web Habilitadas en este Servidor
         const enabledP = cfg.enabledProviders || ['bypass', 'bypass_uid', 'mycheats', 'keyauth'];
-        if (document.getElementById('plat_check_bypass')) document.getElementById('plat_check_bypass').checked = enabledP.includes('bypass');
-        if (document.getElementById('plat_check_bypass_uid')) document.getElementById('plat_check_bypass_uid').checked = enabledP.includes('bypass_uid');
-        if (document.getElementById('plat_check_mycheats')) document.getElementById('plat_check_mycheats').checked = enabledP.includes('mycheats');
-        if (document.getElementById('plat_check_keyauth')) document.getElementById('plat_check_keyauth').checked = enabledP.includes('keyauth');
+        setCheck('plat_check_bypass', enabledP.includes('bypass'));
+        setCheck('plat_check_bypass_uid', enabledP.includes('bypass_uid'));
+        setCheck('plat_check_mycheats', enabledP.includes('mycheats'));
+        setCheck('plat_check_keyauth', enabledP.includes('keyauth'));
         updateGeneratorProviderOptions(enabledP);
         updateModalResellerPlatforms(enabledP);
 
         // Canales y Alertas
-        document.getElementById('cfg_panelChannelId').value = cfg.channels?.panelChannelId || '';
-        document.getElementById('cfg_adminPanelChannelId').value = cfg.channels?.adminPanelChannelId || '';
-        document.getElementById('cfg_logsChannelId').value = cfg.channels?.logsChannelId || '';
-        document.getElementById('cfg_voiceChannelId').value = cfg.channels?.voiceChannelId || '';
-        document.getElementById('cfg_alertRoleId').value = cfg.channels?.alertRoleId || '';
+        setVal('cfg_panelChannelId', cfg.channels?.panelChannelId || '');
+        setVal('cfg_adminPanelChannelId', cfg.channels?.adminPanelChannelId || '');
+        setVal('cfg_logsChannelId', cfg.channels?.logsChannelId || '');
+        setVal('cfg_voiceChannelId', cfg.channels?.voiceChannelId || '');
+        setVal('cfg_alertRoleId', cfg.channels?.alertRoleId || '');
 
         // Marca (White-Label)
         const branding = cfg.branding || {};
         const color = branding.embedColor || '#2563eb';
-        document.getElementById('cfg_branding_color').value = color;
-        document.getElementById('cfg_branding_color_picker').value = color;
-        document.getElementById('cfg_branding_prefix').value = branding.defaultPrefix || 'VIP';
+        setVal('cfg_branding_color', color);
+        setVal('cfg_branding_color_picker', color);
+        setVal('cfg_branding_prefix', branding.defaultPrefix || 'VIP');
 
         // Cargar listas desplegables de Discord
         loadDiscordChannels();
@@ -1717,33 +1726,33 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
 
         // Proveedores
         const prov = cfg.providersConfig || {};
-        document.getElementById('cfg_keyauth_sellerKey').value = prov.keyauth?.sellerKey || '';
-        document.getElementById('cfg_bypass_username').value = prov.bypass?.username || '';
-        document.getElementById('cfg_bypass_password').value = prov.bypass?.password || '';
-        document.getElementById('cfg_mycheats_username').value = prov.mycheats?.username || '';
-        document.getElementById('cfg_mycheats_password').value = prov.mycheats?.password || '';
+        setVal('cfg_keyauth_sellerKey', prov.keyauth?.sellerKey || '');
+        setVal('cfg_bypass_username', prov.bypass?.username || '');
+        setVal('cfg_bypass_password', prov.bypass?.password || '');
+        setVal('cfg_mycheats_username', prov.mycheats?.username || '');
+        setVal('cfg_mycheats_password', prov.mycheats?.password || '');
 
         // Nombres y Descripciones de Páginas
         const meta = cfg.providersMetadata || {};
         window.currentProvidersMetadata = meta;
-        if (document.getElementById('cfg_meta_bypass_name')) document.getElementById('cfg_meta_bypass_name').value = meta.bypass?.name || 'Bypass APK';
-        if (document.getElementById('cfg_meta_bypass_desc')) document.getElementById('cfg_meta_bypass_desc').value = meta.bypass?.desc || 'Emisión de licencias';
-        if (document.getElementById('cfg_meta_bypass_uid_name')) document.getElementById('cfg_meta_bypass_uid_name').value = meta.bypass_uid?.name || 'Bypass UID (Auto ON)';
-        if (document.getElementById('cfg_meta_bypass_uid_desc')) document.getElementById('cfg_meta_bypass_uid_desc').value = meta.bypass_uid?.desc || 'Licencias con UID ON';
-        if (document.getElementById('cfg_meta_mycheats_name')) document.getElementById('cfg_meta_mycheats_name').value = meta.mycheats?.name || 'WorldCheats (Panel VIP)';
-        if (document.getElementById('cfg_meta_mycheats_desc')) document.getElementById('cfg_meta_mycheats_desc').value = meta.mycheats?.desc || 'Cuentas de usuario';
-        if (document.getElementById('cfg_meta_keyauth_name')) document.getElementById('cfg_meta_keyauth_name').value = meta.keyauth?.name || 'KeyAuth (Elite Pro)';
-        if (document.getElementById('cfg_meta_keyauth_desc')) document.getElementById('cfg_meta_keyauth_desc').value = meta.keyauth?.desc || 'Licencias oficiales';
+        setVal('cfg_meta_bypass_name', meta.bypass?.name || 'Bypass APK');
+        setVal('cfg_meta_bypass_desc', meta.bypass?.desc || 'Emisión de licencias');
+        setVal('cfg_meta_bypass_uid_name', meta.bypass_uid?.name || 'Bypass UID (Auto ON)');
+        setVal('cfg_meta_bypass_uid_desc', meta.bypass_uid?.desc || 'Licencias con UID ON');
+        setVal('cfg_meta_mycheats_name', meta.mycheats?.name || 'WorldCheats (Panel VIP)');
+        setVal('cfg_meta_mycheats_desc', meta.mycheats?.desc || 'Cuentas de usuario');
+        setVal('cfg_meta_keyauth_name', meta.keyauth?.name || 'KeyAuth (Elite Pro)');
+        setVal('cfg_meta_keyauth_desc', meta.keyauth?.desc || 'Licencias oficiales');
 
         // Plantilla de Entrega Personalizable
         const tmpl = cfg.customTemplate || {};
-        document.getElementById('cfg_template_storeName').value = tmpl.storeName || '';
-        document.getElementById('cfg_template_noteText').value = tmpl.noteText || 'Válida para 1 solo dispositivo.';
-        document.getElementById('cfg_template_footerText').value = tmpl.footerText || '';
-        if (document.getElementById('cfg_template_noEmojis')) document.getElementById('cfg_template_noEmojis').checked = tmpl.noEmojis !== false;
-        if (document.getElementById('cfg_template_wrapCodeBlock')) document.getElementById('cfg_template_wrapCodeBlock').checked = tmpl.wrapCodeBlock === true;
-        if (document.getElementById('cfg_template_rawTemplate')) document.getElementById('cfg_template_rawTemplate').value = tmpl.rawTemplate || '';
-        if (document.getElementById('cfg_template_rawAccountTemplate')) document.getElementById('cfg_template_rawAccountTemplate').value = tmpl.rawAccountTemplate || '';
+        setVal('cfg_template_storeName', tmpl.storeName || '');
+        setVal('cfg_template_noteText', tmpl.noteText || 'Válida para 1 solo dispositivo.');
+        setVal('cfg_template_footerText', tmpl.footerText || '');
+        setCheck('cfg_template_noEmojis', tmpl.noEmojis !== false);
+        setCheck('cfg_template_wrapCodeBlock', tmpl.wrapCodeBlock === true);
+        setVal('cfg_template_rawTemplate', tmpl.rawTemplate || '');
+        setVal('cfg_template_rawAccountTemplate', tmpl.rawAccountTemplate || '');
         updateTemplatePreview();
 
         // Enlace de descarga de Backup
@@ -2064,6 +2073,9 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       const box = document.getElementById('templatePreviewBox');
       if (!box) return;
 
+      const codeFence = String.fromCharCode(96).repeat(3);
+      const nl = String.fromCharCode(10);
+
       if (raw && raw.trim()) {
         let txt = raw
           .replace(/{key}|{clave}|{password}|{pass}/gi, 'Tryhard-3BxbSVFBhxP')
@@ -2075,20 +2087,27 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
           .replace(/{note}|{nota}/gi, note)
           .replace(/{footer}|{pie}/gi, footer || '')
           .replace(/{date}|{fecha}/gi, new Date().toISOString().slice(0, 10));
-        box.innerText = wrapCode ? ('\`\`\`text\n' + txt.trim() + '\n\`\`\`') : txt.trim();
+        box.innerText = wrapCode ? (codeFence + 'text' + nl + txt.trim() + nl + codeFence) : txt.trim();
         return;
       }
 
       if (noEmojis) {
-        let msg = '';
-        if (store) msg += '*' + store.toUpperCase() + '*\n\n';
-        msg += '*DETALLES DE TU ACCESO*\n';
-        msg += 'Plataforma: ' + pName + '\n';
-        msg += 'Clave: Tryhard-3BxbSVFBhxP\n';
-        msg += 'Duración: 30 Días\n';
-        if (note) msg += 'Nota: ' + note + '\n';
-        if (footer) msg += '\n' + footer + '\n';
-        box.innerText = wrapCode ? ('\`\`\`text\n' + msg.trim() + '\n\`\`\`') : msg.trim();
+        const noEmojiLines = [];
+        if (store) {
+          noEmojiLines.push('*' + store.toUpperCase() + '*');
+          noEmojiLines.push('');
+        }
+        noEmojiLines.push('*DETALLES DE TU ACCESO*');
+        noEmojiLines.push('Plataforma: ' + pName);
+        noEmojiLines.push('Clave: Tryhard-3BxbSVFBhxP');
+        noEmojiLines.push('Duración: 30 Días');
+        if (note) noEmojiLines.push('Nota: ' + note);
+        if (footer) {
+          noEmojiLines.push('');
+          noEmojiLines.push(footer);
+        }
+        const msg = noEmojiLines.join(nl);
+        box.innerText = wrapCode ? (codeFence + 'text' + nl + msg.trim() + nl + codeFence) : msg.trim();
         return;
       }
 
@@ -2100,8 +2119,8 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
       lines.push('⚠️ Nota: ' + note);
       if (footer) lines.push('💬 ' + footer);
 
-      const content = lines.join('\n');
-      box.innerText = wrapCode ? ('\`\`\`text\n' + content + '\n\`\`\`') : content;
+      const content = lines.join(nl);
+      box.innerText = wrapCode ? (codeFence + 'text' + nl + content + nl + codeFence) : content;
     }
 
     function loadCleanTemplatePreset() {
@@ -2125,13 +2144,13 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
     async function saveCustomTemplate(e) {
       e.preventDefault();
       const customTemplate = {
-        storeName: document.getElementById('cfg_template_storeName').value.trim(),
-        noteText: document.getElementById('cfg_template_noteText').value.trim(),
-        footerText: document.getElementById('cfg_template_footerText').value.trim(),
-        noEmojis: document.getElementById('cfg_template_noEmojis').checked,
-        wrapCodeBlock: document.getElementById('cfg_template_wrapCodeBlock').checked,
-        rawTemplate: document.getElementById('cfg_template_rawTemplate').value,
-        rawAccountTemplate: document.getElementById('cfg_template_rawAccountTemplate').value,
+        storeName: (document.getElementById('cfg_template_storeName')?.value || '').trim(),
+        noteText: (document.getElementById('cfg_template_noteText')?.value || '').trim(),
+        footerText: (document.getElementById('cfg_template_footerText')?.value || '').trim(),
+        noEmojis: document.getElementById('cfg_template_noEmojis')?.checked !== false,
+        wrapCodeBlock: document.getElementById('cfg_template_wrapCodeBlock')?.checked === true,
+        rawTemplate: document.getElementById('cfg_template_rawTemplate')?.value || '',
+        rawAccountTemplate: document.getElementById('cfg_template_rawAccountTemplate')?.value || '',
       };
 
       try {
