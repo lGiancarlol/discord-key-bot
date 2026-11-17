@@ -1219,7 +1219,7 @@ client.on('interactionCreate', async (interaction) => {
           .setTitle('📊 Estado de Servicios y Plataformas')
           .addFields(
             { name: 'Bypass APK', value: bypassInfo, inline: false },
-            { name: 'Bypass UID (Auto ON)', value: '🟢 Sistema Online (172.96.172.132:3000)', inline: false },
+            { name: 'Bypass UID (Auto ON)', value: '🟢 Sistema Online (bypass.softwarecheats.site)', inline: false },
             { name: 'WorldCheats (Panel VIP)', value: '🟢 Sistema Online (App 146)', inline: false },
             {
               name: 'KeyAuth (Elite Pro)',

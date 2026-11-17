@@ -807,7 +807,7 @@ function renderDashboardPage(user, guild, guildData, providersConfig, availableG
 
             <!-- Bypass APK -->
             <div class="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800 space-y-2">
-              <span class="text-xs font-bold text-brand-400 block">Bypass APK (172.96.172.132)</span>
+              <span class="text-xs font-bold text-brand-400 block">Bypass APK (bypass.softwarecheats.site)</span>
               <div class="grid grid-cols-2 gap-2">
                 <div>
                   <label class="block text-[11px] text-slate-400 mb-1">Usuario</label>

@@ -111,7 +111,7 @@ class ProviderManager {
 
   async checkAllHealth(guildId = null, db = null) {
     const targets = [
-      { id: 'bypass', name: 'Bypass APK (172.96.172.132)' },
+      { id: 'bypass', name: 'Bypass APK (bypass.softwarecheats.site)' },
       { id: 'mycheats', name: 'WorldCheats (new.mycheats.net)' },
       { id: 'keyauth', name: 'KeyAuth (Elite Pro)' },
       { id: 'realauthx', name: 'RealAuthX (Roblox)' },

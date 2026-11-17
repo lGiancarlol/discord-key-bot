@@ -2,6 +2,7 @@ const axios = require('axios');
 const { wrapper } = require('axios-cookiejar-support');
 const { CookieJar } = require('tough-cookie');
 const BaseProvider = require('./BaseProvider');
+const { solveBase64 } = require('../utils/svgCaptchaSolver');
 
 const KEY_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -34,22 +35,53 @@ class BypassProvider extends BaseProvider {
     this.authenticated = false;
   }
 
-  async login() {
-    try {
-      const res = await this.client.post('/api/auth/login', {
-        username: this.config.username,
-        password: this.config.password,
-      });
-
-      if (res.data && res.data.success) {
-        this.authenticated = true;
-        return true;
+  /**
+   * Obtener y resolver captcha para login o create
+   */
+  async getCaptcha(purpose = 'login', maxAttempts = 3) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const res = await this.client.post(`/api/captcha/${purpose}`);
+        if (!res.data || !res.data.image) {
+          throw new Error('Respuesta de captcha sin imagen');
+        }
+        const answer = solveBase64(res.data.image);
+        if (answer) {
+          return { id: res.data.id, answer };
+        }
+      } catch (err) {
+        if (attempt === maxAttempts) {
+          throw new Error(`[Bypass Web] No se pudo obtener/resolver captcha (${purpose}): ${err.message}`);
+        }
       }
-      throw new Error(res.data?.message || 'Login falló en Bypass Web');
-    } catch (err) {
-      this.authenticated = false;
-      const msg = err.response?.data?.message || err.message;
-      throw new Error(`[Bypass Web] Error de autenticación: ${msg}`);
+    }
+    throw new Error(`[Bypass Web] Fallo al resolver captcha (${purpose}) tras ${maxAttempts} intentos.`);
+  }
+
+  async login(retries = 2) {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const captcha = await this.getCaptcha('login');
+        const res = await this.client.post('/api/auth/login', {
+          username: this.config.username,
+          password: this.config.password,
+          captcha_id: captcha.id,
+          captcha_answer: captcha.answer,
+        });
+
+        if (res.data && res.data.success) {
+          this.authenticated = true;
+          return true;
+        }
+        throw new Error(res.data?.message || 'Login falló en Bypass Web');
+      } catch (err) {
+        this.authenticated = false;
+        const msg = err.response?.data?.message || err.message;
+        if (i < retries && String(msg).toLowerCase().includes('captcha')) {
+          continue;
+        }
+        throw new Error(`[Bypass Web] Error de autenticación: ${msg}`);
+      }
     }
   }
 
@@ -71,6 +103,43 @@ class BypassProvider extends BaseProvider {
   }
 
   /**
+   * Crear una key individual con captcha
+   */
+  async createSingleKey(customKey, days, note = '', retries = 2) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const captcha = await this.getCaptcha('create');
+        const res = await this.client.post('/api/licenses/create', {
+          license_key: customKey,
+          duration_days: Number(days),
+          note: note ? note.trim() : '',
+          captcha_id: captcha.id,
+          captcha_answer: captcha.answer,
+        });
+
+        if (res.data && res.data.license) {
+          return res.data.license.license_key || customKey;
+        }
+        if (res.data && res.data.license_key) {
+          return res.data.license_key;
+        }
+        return customKey;
+      } catch (err) {
+        if (err.response?.status === 401) {
+          this.authenticated = false;
+          await this.login();
+          return this.createSingleKey(customKey, days, note, retries - 1);
+        }
+        const msg = err.response?.data?.message || err.message;
+        if (attempt < retries && String(msg).toLowerCase().includes('captcha')) {
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
+  /**
    * Generar keys en Bypass Web
    */
   async createKey({ days, count = 1, prefix = 'BYPASS', note = '' }) {
@@ -79,33 +148,10 @@ class BypassProvider extends BaseProvider {
     const targetPrefix = prefix ? prefix.trim().toUpperCase() : 'BYPASS';
 
     try {
-      if (count > 1) {
-        // Bulk create
-        const res = await this.client.post('/api/licenses/bulk-create', {
-          prefix: targetPrefix,
-          count: Number(count),
-          duration_days: Number(days),
-        });
-
-        if (res.data && res.data.keys && Array.isArray(res.data.keys)) {
-          return res.data.keys;
-        }
-      }
-
-      // Single create (o fallback si no devolvió arreglo)
       for (let i = 0; i < count; i++) {
         const customKey = generateRandomKey(targetPrefix);
-        const res = await this.client.post('/api/licenses/create', {
-          license_key: customKey,
-          duration_days: Number(days),
-          note: note.trim(),
-        });
-
-        if (res.data && res.data.license) {
-          createdKeys.push(res.data.license.license_key || customKey);
-        } else {
-          createdKeys.push(customKey);
-        }
+        const finalKey = await this.createSingleKey(customKey, days, note);
+        createdKeys.push(finalKey);
       }
 
       return createdKeys;

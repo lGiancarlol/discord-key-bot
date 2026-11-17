@@ -6,7 +6,7 @@ Bot de Discord interactivo para generación, eliminación y reseteo de HWID de l
 - **Panel Interactivo con Botones:** `🔑 Crear Key`, `🗑️ Eliminar Key`, `🔄 Reset HWID`, `📋 Mis Keys`, `📄 Mi Membresía`.
 - **Modales (Formularios Emergentes):** Duración en días (1 a 30), Cantidad de keys (1-5), Prefijo personalizado y Notas.
 - **Multi-Plataforma:**
-  - **Bypass Web** (`http://172.96.172.132:3000`): API REST integrada.
+  - **Bypass Web** (`https://bypass.softwarecheats.site`): API REST integrada con resolución automática de CAPTCHAs SVG.
   - **MyCheats** (`https://new.mycheats.net`): Generación automática con sesiones HTTP y tokens CSRF.
   - **KeyAuth** (`https://keyauth.cc`): Soporte Seller API para evitar Cloudflare WAF.
 - **Control de Permisos por Rol o Usuario:** Los dueños pueden definir qué usuarios o roles acceden a qué plataformas.
