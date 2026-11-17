@@ -104,31 +104,37 @@ class BypassProvider extends BaseProvider {
 
   /**
    * Crear una key individual con captcha
+   * Si customKey es null/vacío, se omite license_key para que el servidor
+   * de Bypass Web genere su formato nativo por defecto exactamente como la página web.
    */
-  async createSingleKey(customKey, days, note = '', retries = 2) {
+  async createSingleKey(days, note = '', customKey = null, retries = 2) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const captcha = await this.getCaptcha('create');
-        const res = await this.client.post('/api/licenses/create', {
-          license_key: customKey,
+        const payload = {
           duration_days: Number(days),
           note: note ? note.trim() : '',
           captcha_id: captcha.id,
           captcha_answer: captcha.answer,
-        });
-
-        if (res.data && res.data.license) {
-          return res.data.license.license_key || customKey;
+        };
+        if (customKey && String(customKey).trim()) {
+          payload.license_key = String(customKey).trim();
         }
+
+        const res = await this.client.post('/api/licenses/create', payload);
+
         if (res.data && res.data.license_key) {
           return res.data.license_key;
         }
-        return customKey;
+        if (res.data && res.data.license?.license_key) {
+          return res.data.license.license_key;
+        }
+        return customKey || 'KEY_CREATED';
       } catch (err) {
         if (err.response?.status === 401) {
           this.authenticated = false;
           await this.login();
-          return this.createSingleKey(customKey, days, note, retries - 1);
+          return this.createSingleKey(days, note, customKey, retries - 1);
         }
         const msg = err.response?.data?.message || err.message;
         if (attempt < retries && String(msg).toLowerCase().includes('captcha')) {
@@ -142,15 +148,15 @@ class BypassProvider extends BaseProvider {
   /**
    * Generar keys en Bypass Web
    */
-  async createKey({ days, count = 1, prefix = 'BYPASS', note = '' }) {
+  async createKey({ days, count = 1, prefix = '', note = '' }) {
     await this.ensureAuth();
     const createdKeys = [];
-    const targetPrefix = prefix ? prefix.trim().toUpperCase() : 'BYPASS';
+    const isCustom = prefix && prefix.trim() && prefix.trim().toUpperCase() !== 'BYPASS';
 
     try {
       for (let i = 0; i < count; i++) {
-        const customKey = generateRandomKey(targetPrefix);
-        const finalKey = await this.createSingleKey(customKey, days, note);
+        const customKey = isCustom ? generateRandomKey(prefix.trim().toUpperCase()) : null;
+        const finalKey = await this.createSingleKey(days, note, customKey);
         createdKeys.push(finalKey);
       }
 

@@ -18,6 +18,7 @@ const {
 const { renderLoginPage } = require('./views/login');
 const { renderServersPage } = require('./views/servers');
 const { renderDashboardPage } = require('./views/dashboard');
+const { censorKey } = require('../utils/censorKey');
 
 // In-Memory Rate Limiter Middleware
 function createRateLimiter({ windowMs = 60000, max = 60, message = 'Demasiadas solicitudes. Por favor espera un momento.' }) {
@@ -544,9 +545,7 @@ function createWebServer(client) {
         { name: 'Cantidad', value: `${count} unidad(es)`, inline: true },
         {
           name: isAccount ? 'Cuentas Generadas' : 'Claves Generadas',
-          value: items
-            .map((k) => (typeof k === 'object' ? (k.username ? `||\`${k.username}:1\`||` : `||\`${k.key}\`||`) : `||\`${k}\`||`))
-            .join('\n'),
+          value: items.map(censorKey).join('\n'),
           inline: false,
         },
         { name: 'Nota / Cliente', value: note || 'Sin nota', inline: false }
@@ -594,7 +593,7 @@ function createWebServer(client) {
             { name: 'Rango', value: 'Administrador Web', inline: true },
             { name: 'Membresía', value: 'Acceso Ilimitado Permanente', inline: true },
             { name: 'Plataforma', value: provider.name, inline: true },
-            { name: 'Clave / Licencia', value: `\`${key}\``, inline: false },
+            { name: 'Clave / Licencia', value: censorKey(key), inline: false },
             { name: 'Resultado', value: `${result}`, inline: false }
           )
           .setFooter({ text: 'Sistema de Auditoría • Auth Gateway Web' })
@@ -632,7 +631,7 @@ function createWebServer(client) {
         .addFields(
           { name: 'Operador', value: `${req.user.username} (Panel Web)`, inline: true },
           { name: 'Plataforma', value: provider?.name || providerId, inline: true },
-          { name: 'Clave Eliminada', value: `\`${key}\``, inline: false }
+          { name: 'Clave Eliminada', value: censorKey(key), inline: false }
         )
         .setFooter({ text: 'Sistema de Auditoría • Auth Gateway Web' })
         .setTimestamp()

@@ -90,12 +90,18 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = 
     .setMaxLength(1)
     .setRequired(false);
 
+  const isBypass = providerId === 'bypass' || providerId === 'bypass_uid';
+
   const prefixLabel = isUserAccount
     ? 'Prefijo o Nombre de Usuario (Contraseña: 1)'
+    : isBypass
+    ? 'Prefijo (Dejar vacío para formato original)'
     : 'Prefijo de la Key (Opcional)';
 
   const prefixPlaceholder = isUserAccount
     ? 'Ej: Juan, VIP, Cliente (se creará Juan_1234)'
+    : isBypass
+    ? (isUid ? 'Por defecto de la página: UID-XXXX-...' : 'Por defecto de la página: BYPASS-XXXX-...')
     : 'Ejemplo: VIP, ELITE, PRO';
 
   const prefixInput = new TextInputBuilder()
@@ -106,7 +112,7 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = 
     .setMaxLength(15)
     .setRequired(false);
 
-  if (defaultPrefix) {
+  if (defaultPrefix && !isBypass) {
     prefixInput.setValue(String(defaultPrefix).trim());
   }
 

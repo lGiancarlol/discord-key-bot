@@ -29,6 +29,7 @@ const {
   getAdminAddStockModal,
 } = require('./discord/modals');
 const { commands } = require('./discord/commands');
+const { censorKey } = require('./utils/censorKey');
 
 const client = new Client({
   intents: [
@@ -1968,7 +1969,7 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Rango', value: audit.role, inline: true },
                 { name: 'Membresía', value: audit.membership, inline: true },
                 { name: 'Plataforma', value: provider.name, inline: true },
-                { name: 'Clave / Licencia', value: `\`${key}\``, inline: false },
+                { name: 'Clave / Licencia', value: censorKey(key), inline: false },
                 { name: 'Método', value: 'Selección Rápida (Mis Licencias)', inline: false }
               )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
@@ -2537,7 +2538,8 @@ client.on('interactionCreate', async (interaction) => {
 
         await interaction.deferReply({ ephemeral: true });
 
-        const serverPrefix = db.forGuild(gId).getDefaultPrefix();
+        const isBypass = providerId === 'bypass' || providerId === 'bypass_uid';
+        const serverPrefix = isBypass ? '' : db.forGuild(gId).getDefaultPrefix();
         const finalPrefix = (prefix && prefix.trim()) ? prefix.trim() : (providerId === 'mycheats' ? (serverPrefix || 'USER') : serverPrefix);
 
         try {
@@ -2625,9 +2627,7 @@ client.on('interactionCreate', async (interaction) => {
             { name: 'Cantidad', value: `${count} unidad(es)`, inline: true },
             {
               name: isVipAccount ? 'Cuentas Generadas' : 'Claves Generadas',
-              value: items
-                .map((k) => (typeof k === 'object' ? (k.username ? `||\`${k.username}:1\`||` : `||\`${k.key}\`||`) : `||\`${k}\`||`))
-                .join('\n'),
+              value: items.map(censorKey).join('\n'),
               inline: false,
             },
             { name: 'Cliente / Nota', value: note || 'Sin nota registrada', inline: false }
@@ -2698,7 +2698,7 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Rango', value: opAudit.role, inline: true },
                 { name: 'Membresía', value: opAudit.membership, inline: true },
                 { name: 'Plataforma', value: provider.name, inline: true },
-                { name: 'Clave Eliminada', value: `\`${key}\``, inline: false }
+                { name: 'Clave Eliminada', value: censorKey(key), inline: false }
               )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
               .setTimestamp(),
@@ -2760,7 +2760,7 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Rango', value: opAudit.role, inline: true },
                 { name: 'Membresía', value: opAudit.membership, inline: true },
                 { name: 'Plataforma', value: provider.name, inline: true },
-                { name: 'Clave / Licencia', value: `\`${key}\``, inline: false },
+                { name: 'Clave / Licencia', value: censorKey(key), inline: false },
                 { name: 'Detalle', value: `${result}`, inline: false }
               )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
