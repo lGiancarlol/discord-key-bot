@@ -111,24 +111,30 @@ class ProviderManager {
 
   async checkAllHealth(guildId = null, db = null) {
     const targets = [
-      { id: 'bypass', name: 'Bypass APK (bypass.softwarecheats.site)' },
-      { id: 'mycheats', name: 'WorldCheats (new.mycheats.net)' },
-      { id: 'keyauth', name: 'KeyAuth (Elite Pro)' },
-      { id: 'realauthx', name: 'RealAuthX (Roblox)' },
+      { id: 'bypass', fallbackName: 'Bypass APK' },
+      { id: 'bypass_uid', fallbackName: 'Bypass UID (Auto ON)' },
+      { id: 'mycheats', fallbackName: 'WorldCheats (Panel VIP)' },
+      { id: 'keyauth', fallbackName: 'KeyAuth (Elite Pro)' },
+      { id: 'realauthx', fallbackName: 'RealAuthX (Roblox)' },
     ];
 
     const results = {};
     for (const t of targets) {
+      const customName = (guildId && db && typeof db.getProviderMetadata === 'function')
+        ? db.getProviderMetadata(guildId, t.id)?.name
+        : null;
+      const displayName = customName && customName.trim() ? customName.trim() : t.fallbackName;
+
       const p = this.getForGuild(t.id, guildId, db);
       if (p && typeof p.checkHealth === 'function') {
         try {
           const res = await p.checkHealth();
-          results[t.id] = { name: t.name, ...res };
+          results[t.id] = { name: displayName, ...res };
         } catch (err) {
-          results[t.id] = { name: t.name, online: false, error: err.message };
+          results[t.id] = { name: displayName, online: false, error: err.message };
         }
       } else {
-        results[t.id] = { name: t.name, online: true, message: 'Operativo' };
+        results[t.id] = { name: displayName, online: true, message: 'Operativo' };
       }
     }
     return results;

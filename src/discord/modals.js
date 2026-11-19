@@ -5,12 +5,12 @@ const {
   ActionRowBuilder,
 } = require('discord.js');
 
-function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = '', subId = '', subName = '') {
+function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = '', subId = '', subName = '', customName = '') {
   // Modal específico para KeyAuth (Elite Pro): Funciona por stock precargado
   if (providerId === 'keyauth') {
     const modal = new ModalBuilder()
       .setCustomId('modal_create_keyauth')
-      .setTitle('🔑 Reclamar KeyAuth (Elite Pro)');
+      .setTitle(`🔑 Reclamar ${customName || 'KeyAuth (Elite Pro)'}`.slice(0, 45));
 
     const daysInput = new TextInputBuilder()
       .setCustomId('input_days')
@@ -51,16 +51,16 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = 
   const isUid = providerId === 'bypass_uid';
   const isRealAuthX = providerId === 'realauthx';
 
-  let title = '⚡ Crear Licencia Bypass APK';
+  let title = customName ? `⚡ Crear ${customName}`.slice(0, 45) : '⚡ Crear Licencia Bypass APK';
   let modalCustomId = `modal_create_${providerId}`;
 
   if (isUserAccount) {
-    title = subName ? `👤 ${subName}`.slice(0, 45) : '👤 Crear Usuario (WorldCheats VIP)';
+    title = subName ? `👤 ${subName}`.slice(0, 45) : `👤 Crear ${customName || 'Usuario (VIP)'}`.slice(0, 45);
     if (subId) modalCustomId = `modal_create_mycheats_${subId}`;
   }
-  if (isUid) title = '🛡️ Crear Licencia Bypass UID (Auto ON)';
+  if (isUid) title = customName ? `🛡️ Crear ${customName}`.slice(0, 45) : '🛡️ Crear Licencia Bypass UID (Auto ON)';
   if (isRealAuthX) {
-    title = subName ? `🎮 ${subName}`.slice(0, 45) : '🎮 Crear Licencia RealAuthX (Roblox)';
+    title = subName ? `🎮 ${subName}`.slice(0, 45) : `🎮 Crear ${customName || 'RealAuthX'}`.slice(0, 45);
     if (subId) modalCustomId = `modal_create_realauthx_${subId}`;
   }
 
@@ -134,15 +134,16 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = 
   return modal;
 }
 
-function getDeleteKeyModal(providerId = 'bypass') {
+function getDeleteKeyModal(providerId = 'bypass', customName = '') {
   const isUserAccount = providerId === 'mycheats';
+  const label = customName ? ` (${customName})` : '';
   const modal = new ModalBuilder()
     .setCustomId(`modal_delete_${providerId}`)
-    .setTitle(isUserAccount ? '🗑️ Eliminar Usuario' : '🗑️ Revocar Licencia');
+    .setTitle(isUserAccount ? `🗑️ Eliminar Usuario${label}`.slice(0, 45) : `🗑️ Revocar Licencia${label}`.slice(0, 45));
 
   const keyInput = new TextInputBuilder()
     .setCustomId('input_key')
-    .setLabel(isUserAccount ? 'Nombre de Usuario a eliminar *' : 'License Key a eliminar *')
+    .setLabel(isUserAccount ? `Usuario de ${customName || 'la plataforma'} a eliminar *`.slice(0, 45) : `License Key de ${customName || 'la plataforma'} *`.slice(0, 45))
     .setPlaceholder(isUserAccount ? 'Ej: VIP_1234' : 'KEY-XXXXXX')
     .setStyle(TextInputStyle.Short)
     .setMinLength(2)
@@ -152,15 +153,16 @@ function getDeleteKeyModal(providerId = 'bypass') {
   return modal;
 }
 
-function getResetHwidModal(providerId = 'bypass') {
+function getResetHwidModal(providerId = 'bypass', customName = '') {
   const isUserAccount = providerId === 'mycheats';
+  const label = customName ? ` (${customName})` : '';
   const modal = new ModalBuilder()
     .setCustomId(`modal_reset_${providerId}`)
-    .setTitle('🔄 Resetear HWID');
+    .setTitle(`🔄 Resetear HWID${label}`.slice(0, 45));
 
   const keyInput = new TextInputBuilder()
     .setCustomId('input_key')
-    .setLabel(isUserAccount ? 'Nombre de Usuario a resetear HWID *' : 'License Key a resetear *')
+    .setLabel(isUserAccount ? `Usuario de ${customName || 'la plataforma'} a resetear *`.slice(0, 45) : `License Key de ${customName || 'la plataforma'} *`.slice(0, 45))
     .setPlaceholder(isUserAccount ? 'Ej: VIP_1234' : 'KEY-XXXXXX')
     .setStyle(TextInputStyle.Short)
     .setMinLength(2)

@@ -1214,19 +1214,21 @@ client.on('interactionCreate', async (interaction) => {
 
         const allStock = db.getAllStock();
         const keyauthStock = allStock.keyauth || 0;
+        const gMeta = db.getAllProvidersMetadata(interaction.guildId);
 
         const embed = new EmbedBuilder()
           .setColor(0x2ecc71)
           .setTitle('📊 Estado de Servicios y Plataformas')
           .addFields(
-            { name: 'Bypass APK', value: bypassInfo, inline: false },
-            { name: 'Bypass UID (Auto ON)', value: '🟢 Sistema Online (bypass.softwarecheats.site)', inline: false },
-            { name: 'WorldCheats (Panel VIP)', value: '🟢 Sistema Online (App 146)', inline: false },
+            { name: gMeta.bypass?.name || 'Bypass APK', value: bypassInfo, inline: false },
+            { name: gMeta.bypass_uid?.name || 'Bypass UID (Auto ON)', value: '🟢 Sistema Online (bypass.softwarecheats.site)', inline: false },
+            { name: gMeta.mycheats?.name || 'WorldCheats (Panel VIP)', value: '🟢 Sistema Online (App 146)', inline: false },
             {
-              name: 'KeyAuth (Elite Pro)',
+              name: gMeta.keyauth?.name || 'KeyAuth (Elite Pro)',
               value: keyauthStock > 0 ? `🟢 Stock Online (${keyauthStock} claves disponibles)` : '⚠️ Stock Agotado (Recargar con /stock add)',
               inline: false,
             },
+            { name: gMeta.realauthx?.name || 'RealAuthX (Roblox)', value: '🟢 Sistema Online (Roblox)', inline: false },
             { name: 'Total Creadas por Bot', value: `${db.data.generatedKeys.length}`, inline: true }
           )
           .setFooter({ text: 'Desarrollado por Gian • Auth Cloud Gateway' })
@@ -1544,6 +1546,7 @@ client.on('interactionCreate', async (interaction) => {
         // Si solo tiene acceso a 1 plataforma, abrir modal directo o selector de sub
         if (perms.allowedProviders.length === 1) {
           const onlyPid = perms.allowedProviders[0];
+          const customName = db.getProviderMetadata(interaction.guildId, onlyPid)?.name;
           if (onlyPid === 'mycheats') {
             const provider = providerManager.getForGuild('mycheats', interaction.guildId, db);
             const subs = await provider.getSubscriptions();
@@ -1555,11 +1558,11 @@ client.on('interactionCreate', async (interaction) => {
             const subRow = new ActionRowBuilder().addComponents(
               new StringSelectMenuBuilder()
                 .setCustomId('select_mycheats_sub')
-                .setPlaceholder('Selecciona la suscripción de WorldCheats')
+                .setPlaceholder(`Selecciona la suscripción de ${customName || 'WorldCheats'}`.slice(0, 100))
                 .addOptions(subOptions)
             );
             return interaction.reply({
-              content: '👤 **Selecciona el tipo de suscripción para WorldCheats:**',
+              content: `👤 **Selecciona el tipo de suscripción para ${customName || 'WorldCheats'}:**`,
               components: [subRow],
               ephemeral: true,
             });
@@ -1567,7 +1570,7 @@ client.on('interactionCreate', async (interaction) => {
 
           const defaultPrefix = db.forGuild(interaction.guildId).getDefaultPrefix();
           return interaction.showModal(
-            getCreateKeyModal(onlyPid, perms.maxDays, defaultPrefix)
+            getCreateKeyModal(onlyPid, perms.maxDays, defaultPrefix, '', '', customName)
           );
         }
 
@@ -1628,13 +1631,16 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (perms.allowedProviders.length === 1) {
+          const onlyPid = perms.allowedProviders[0];
+          const customName = db.getProviderMetadata(interaction.guildId, onlyPid)?.name;
           return interaction.showModal(
-            getDeleteKeyModal(perms.allowedProviders[0])
+            getDeleteKeyModal(onlyPid, customName)
           );
         }
 
+        const delMeta = db.getAllProvidersMetadata(interaction.guildId);
         const options = perms.allowedProviders.map((pid) => ({
-          label: providerManager.get(pid)?.name || pid,
+          label: delMeta[pid]?.name || providerManager.get(pid)?.name || pid,
           value: pid,
         }));
 
@@ -1684,13 +1690,16 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (perms.allowedProviders.length === 1) {
+          const onlyPid = perms.allowedProviders[0];
+          const customName = db.getProviderMetadata(interaction.guildId, onlyPid)?.name;
           return interaction.showModal(
-            getResetHwidModal(perms.allowedProviders[0])
+            getResetHwidModal(onlyPid, customName)
           );
         }
 
+        const rstMeta = db.getAllProvidersMetadata(interaction.guildId);
         const options = perms.allowedProviders.map((pid) => ({
-          label: providerManager.get(pid)?.name || pid,
+          label: rstMeta[pid]?.name || providerManager.get(pid)?.name || pid,
           value: pid,
         }));
 
@@ -1847,6 +1856,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (selectedProvider === 'mycheats') {
           const provider = providerManager.getForGuild('mycheats', interaction.guildId, db);
+          const customName = db.getProviderMetadata(interaction.guildId, 'mycheats')?.name || 'WorldCheats (Panel VIP)';
           const subs = await provider.getSubscriptions();
           const subOptions = subs.map((s) => ({
             label: s.name.slice(0, 100),
@@ -1856,18 +1866,19 @@ client.on('interactionCreate', async (interaction) => {
           const subRow = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
               .setCustomId('select_mycheats_sub')
-              .setPlaceholder('Selecciona la suscripción de WorldCheats')
+              .setPlaceholder(`Selecciona la suscripción de ${customName}`.slice(0, 100))
               .addOptions(subOptions)
           );
           return interaction.update({
-            content: '👤 **Selecciona el tipo de suscripción para WorldCheats:**',
+            content: `👤 **Selecciona el tipo de suscripción para ${customName}:**`,
             components: [subRow],
           });
         }
 
         const defaultPrefix = db.forGuild(interaction.guildId).getDefaultPrefix();
+        const customName = db.getProviderMetadata(interaction.guildId, selectedProvider)?.name;
         return interaction.showModal(
-          getCreateKeyModal(selectedProvider, perms.maxDays, defaultPrefix)
+          getCreateKeyModal(selectedProvider, perms.maxDays, defaultPrefix, '', '', customName)
         );
       }
 
@@ -1880,12 +1891,13 @@ client.on('interactionCreate', async (interaction) => {
         }
         const chosenSubId = values[0];
         const provider = providerManager.getForGuild('mycheats', interaction.guildId, db);
+        const customName = db.getProviderMetadata(interaction.guildId, 'mycheats')?.name || 'WorldCheats (Panel VIP)';
         const subs = await provider.getSubscriptions();
         const foundSub = subs.find((s) => String(s.id) === String(chosenSubId));
         const subName = foundSub ? foundSub.name : '';
         const defaultPrefix = db.forGuild(interaction.guildId).getDefaultPrefix();
         return interaction.showModal(
-          getCreateKeyModal('mycheats', perms.maxDays, defaultPrefix, chosenSubId, subName)
+          getCreateKeyModal('mycheats', perms.maxDays, defaultPrefix, chosenSubId, subName, customName)
         );
       }
 
@@ -1903,7 +1915,8 @@ client.on('interactionCreate', async (interaction) => {
             ephemeral: true,
           });
         }
-        return interaction.showModal(getDeleteKeyModal(selectedProvider));
+        const customName = db.getProviderMetadata(interaction.guildId, selectedProvider)?.name;
+        return interaction.showModal(getDeleteKeyModal(selectedProvider, customName));
       }
 
       if (customId === 'select_reset_provider') {
@@ -1920,7 +1933,8 @@ client.on('interactionCreate', async (interaction) => {
             ephemeral: true,
           });
         }
-        return interaction.showModal(getResetHwidModal(selectedProvider));
+        const customName = db.getProviderMetadata(interaction.guildId, selectedProvider)?.name;
+        return interaction.showModal(getResetHwidModal(selectedProvider, customName));
       }
 
       // Reset rápido de HWID desde el panel personal
@@ -1954,21 +1968,23 @@ client.on('interactionCreate', async (interaction) => {
 
         await interaction.deferReply({ ephemeral: true });
         try {
+          const pMeta = db.getProviderMetadata(gId, providerId);
+          const pDisplayName = pMeta?.name || provider.name;
           const result = await provider.resetHwid(key);
           await interaction.editReply({
-            content: `✅ **HWID Reseteado Exitosamente:**\n• Clave: \`${key}\`\n• Plataforma: **${provider.name}**\n• Detalle: ${result}`,
+            content: `✅ **HWID Reseteado Exitosamente:**\n• Clave: \`${key}\`\n• Plataforma: **${pDisplayName}**\n• Detalle: ${result}`,
           });
 
           const audit = getUserAuditInfo(member, user, config, gId);
           await logToAdminChannel(
             new EmbedBuilder()
               .setColor(0xd97706)
-              .setTitle('[AUDITORÍA] Restablecimiento de HWID')
+              .setTitle(`[AUDITORÍA] Restablecimiento de HWID (${pDisplayName})`)
               .addFields(
                 { name: 'Operador', value: `<@${user.id}>`, inline: true },
                 { name: 'Rango', value: audit.role, inline: true },
                 { name: 'Membresía', value: audit.membership, inline: true },
-                { name: 'Plataforma', value: provider.name, inline: true },
+                { name: 'Plataforma', value: pDisplayName, inline: true },
                 { name: 'Clave / Licencia', value: censorKey(key), inline: false },
                 { name: 'Método', value: 'Selección Rápida (Mis Licencias)', inline: false }
               )
@@ -2495,6 +2511,8 @@ client.on('interactionCreate', async (interaction) => {
         const floodCheck = db.forGuild(gId).checkAntiFlood(user.id);
         if (!floodCheck.allowed) {
           if (floodCheck.triggeredCooldown) {
+            const pMeta = db.getProviderMetadata(gId, providerId);
+            const pDisplayName = pMeta?.name || provider.name;
             await logToGuildAdminChannel(
               interaction.guild,
               new EmbedBuilder()
@@ -2503,7 +2521,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription('Se ha detectado una ráfaga excesiva de emisión (>3 intentos en menos de 2 minutos).')
                 .addFields(
                   { name: 'Usuario / Revendedor', value: `<@${user.id}> (${user.tag})`, inline: true },
-                  { name: 'Plataforma Solicitada', value: provider.name, inline: true },
+                  { name: 'Plataforma Solicitada', value: pDisplayName, inline: true },
                   { name: 'Acción Aplicada', value: 'Enfriamiento temporal de 10 minutos activado automáticamente.', inline: false }
                 )
                 .setFooter({ text: 'Sistema de Seguridad Anti-Flood • Auth Gateway' })
@@ -2611,13 +2629,13 @@ client.on('interactionCreate', async (interaction) => {
           // Log de auditoría
           const opAudit = getUserAuditInfo(member, user, config, gId);
           const isVipAccount = providerId === 'mycheats';
-          const title = isVipAccount ? '[AUDITORÍA] Creación de Cuenta VIP' : '[AUDITORÍA] Emisión de Licencia';
+          const title = `[AUDITORÍA] ${isVipAccount ? 'Creación de Cuenta' : 'Emisión de Licencia'} (${pDisplayName})`;
 
           const logFields = [
             { name: 'Operador', value: `<@${user.id}>`, inline: true },
             { name: 'Rango', value: opAudit.role, inline: true },
             { name: 'Membresía', value: opAudit.membership, inline: true },
-            { name: 'Plataforma', value: provider.name, inline: true },
+            { name: 'Plataforma', value: pDisplayName, inline: true },
           ];
           if (firstSubName) {
             logFields.push({ name: 'Suscripción', value: firstSubName, inline: true });
@@ -2688,16 +2706,18 @@ client.on('interactionCreate', async (interaction) => {
             content: `🗑️ **Resultado:** ${result}`,
           });
 
+          const pMeta = db.getProviderMetadata(gId, providerId);
+          const pDisplayName = pMeta?.name || provider.name;
           const opAudit = getUserAuditInfo(member, user, config, gId);
           await logToAdminChannel(
             new EmbedBuilder()
               .setColor(0xdc2626)
-              .setTitle('[AUDITORÍA] Revocación de Licencia')
+              .setTitle(`[AUDITORÍA] Revocación de Licencia (${pDisplayName})`)
               .addFields(
                 { name: 'Operador', value: `<@${user.id}>`, inline: true },
                 { name: 'Rango', value: opAudit.role, inline: true },
                 { name: 'Membresía', value: opAudit.membership, inline: true },
-                { name: 'Plataforma', value: provider.name, inline: true },
+                { name: 'Plataforma', value: pDisplayName, inline: true },
                 { name: 'Clave Eliminada', value: censorKey(key), inline: false }
               )
               .setFooter({ text: 'Sistema de Auditoría • Auth Gateway' })
@@ -2750,16 +2770,18 @@ client.on('interactionCreate', async (interaction) => {
             content: `🔄 **Resultado:** ${result}`,
           });
 
+          const pMeta = db.getProviderMetadata(gId, providerId);
+          const pDisplayName = pMeta?.name || provider.name;
           const opAudit = getUserAuditInfo(member, user, config, gId);
           await logToAdminChannel(
             new EmbedBuilder()
               .setColor(0xd97706)
-              .setTitle('[AUDITORÍA] Restablecimiento de HWID')
+              .setTitle(`[AUDITORÍA] Restablecimiento de HWID (${pDisplayName})`)
               .addFields(
                 { name: 'Operador', value: `<@${user.id}>`, inline: true },
                 { name: 'Rango', value: opAudit.role, inline: true },
                 { name: 'Membresía', value: opAudit.membership, inline: true },
-                { name: 'Plataforma', value: provider.name, inline: true },
+                { name: 'Plataforma', value: pDisplayName, inline: true },
                 { name: 'Clave / Licencia', value: censorKey(key), inline: false },
                 { name: 'Detalle', value: `${result}`, inline: false }
               )

@@ -444,6 +444,9 @@ function createWebServer(client) {
       return res.status(404).json({ error: 'Proveedor no disponible.' });
     }
 
+    const pMeta = req.guildDb.getProviderMetadata ? req.guildDb.getProviderMetadata(providerId) : null;
+    const pDisplayName = pMeta?.name || provider.name;
+
     // 1. Verificación de Anti-Flood (Burst Rate Limiter)
     const floodCheck = req.guildDb.checkAntiFlood(req.user.id);
     if (!floodCheck.allowed) {
@@ -457,7 +460,7 @@ function createWebServer(client) {
             .setDescription('Se ha detectado una ráfaga anormal de peticiones (>3 en menos de 2 minutos).')
             .addFields(
               { name: 'Operador Web', value: `${req.user.username} (<@${req.user.id}>)`, inline: true },
-              { name: 'Plataforma Solicitada', value: provider.name, inline: true },
+              { name: 'Plataforma Solicitada', value: pDisplayName, inline: true },
               { name: 'Medida Aplicada', value: 'Enfriamiento de 10 minutos activado automáticamente.', inline: false }
             )
             .setFooter({ text: 'Sistema de Seguridad Anti-Spam • Auth Gateway' })
@@ -510,9 +513,6 @@ function createWebServer(client) {
       }
 
       // Generar plantilla de WhatsApp personalizada para este servidor con nombre de plataforma configurado
-      const pMeta = req.guildDb.getProviderMetadata ? req.guildDb.getProviderMetadata(providerId) : null;
-      const pDisplayName = pMeta?.name || provider.name;
-
       const forwardText = items
         .map((item) => {
           const val = typeof item === 'object' ? (item.username ? `${item.username}:1` : item.key) : item;
@@ -535,7 +535,7 @@ function createWebServer(client) {
         { name: 'Operador', value: `${req.user.username} (Panel Web)`, inline: true },
         { name: 'Rango', value: 'Administrador Web', inline: true },
         { name: 'Membresía', value: 'Acceso Ilimitado Permanente', inline: true },
-        { name: 'Plataforma', value: provider.name, inline: true },
+        { name: 'Plataforma', value: pDisplayName, inline: true },
       ];
       if (firstSubName) {
         auditFields.push({ name: 'Suscripción', value: firstSubName, inline: true });
@@ -556,7 +556,7 @@ function createWebServer(client) {
         guildId,
         new EmbedBuilder()
           .setColor(0x2563eb)
-          .setTitle(isAccount ? '[AUDITORÍA] Creación de Cuenta VIP' : '[AUDITORÍA] Emisión de Licencia')
+          .setTitle(`[AUDITORÍA] ${isAccount ? 'Creación de Cuenta' : 'Emisión de Licencia'} (${pDisplayName})`)
           .addFields(auditFields)
           .setFooter({ text: 'Sistema de Auditoría • Auth Gateway Web' })
           .setTimestamp()
@@ -580,6 +580,8 @@ function createWebServer(client) {
     }
 
     try {
+      const pMeta = db.getProviderMetadata(guildId, providerId);
+      const pDisplayName = pMeta?.name || provider.name;
       const result = await provider.resetHwid(key);
 
       await logToGuildAdminChannel(
@@ -587,12 +589,12 @@ function createWebServer(client) {
         guildId,
         new EmbedBuilder()
           .setColor(0xd97706)
-          .setTitle('[AUDITORÍA] Restablecimiento de HWID')
+          .setTitle(`[AUDITORÍA] Restablecimiento de HWID (${pDisplayName})`)
           .addFields(
             { name: 'Operador', value: `${req.user.username} (Panel Web)`, inline: true },
             { name: 'Rango', value: 'Administrador Web', inline: true },
             { name: 'Membresía', value: 'Acceso Ilimitado Permanente', inline: true },
-            { name: 'Plataforma', value: provider.name, inline: true },
+            { name: 'Plataforma', value: pDisplayName, inline: true },
             { name: 'Clave / Licencia', value: censorKey(key), inline: false },
             { name: 'Resultado', value: `${result}`, inline: false }
           )
@@ -612,6 +614,9 @@ function createWebServer(client) {
     const { guildId } = req.params;
 
     const provider = providerManager.getForGuild(providerId, guildId, db);
+    const pMeta = db.getProviderMetadata(guildId, providerId);
+    const pDisplayName = pMeta?.name || provider?.name || providerId;
+
     if (provider && provider.deleteKey) {
       try {
         await provider.deleteKey(key);
@@ -627,10 +632,10 @@ function createWebServer(client) {
       guildId,
       new EmbedBuilder()
         .setColor(0xdc2626)
-        .setTitle('[AUDITORÍA] Revocación de Licencia')
+        .setTitle(`[AUDITORÍA] Revocación de Licencia (${pDisplayName})`)
         .addFields(
           { name: 'Operador', value: `${req.user.username} (Panel Web)`, inline: true },
-          { name: 'Plataforma', value: provider?.name || providerId, inline: true },
+          { name: 'Plataforma', value: pDisplayName, inline: true },
           { name: 'Clave Eliminada', value: censorKey(key), inline: false }
         )
         .setFooter({ text: 'Sistema de Auditoría • Auth Gateway Web' })
