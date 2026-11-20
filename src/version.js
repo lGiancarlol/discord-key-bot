@@ -4,16 +4,16 @@
  * las novedades, arreglos y mejoras que se anuncian en el canal de logs al encender.
  */
 module.exports = {
-  version: '2.5.0',
-  build: '20261120',
+  version: '2.5.1',
+  build: '20261120_2',
   releaseDate: '2026-11-20',
-  releaseTitle: '⚡ Auto-Recuperación de Sesiones, Multi-Cuentas & Multi-Suscripciones',
+  releaseTitle: '⚡ Auto-Recuperación de Sesiones, Multi-Suscripciones & Optimización de Código',
   highlights: [
     '🔄 **Auto-Recuperación y Keep-Alive (25 min):** Las sesiones web de MyCheats, Bypass y RealAuthX se renuevan y auto-reparan automáticamente sin necesidad de reiniciar el bot.',
     '👥 **Soporte Multi-Cuentas:** Posibilidad de configurar 2 o más cuentas independientes de la misma plataforma en un servidor (ej: MyCheats Cuenta 1 y Cuenta 2).',
     '🏷️ **KeyAuth Multi-App Stock:** Soporte para clasificar y reclamar stock de KeyAuth por juego/cuenta (ej: Free Fire, Warzone).',
     '🎯 **Multi-Suscripciones en MyCheats:** Ahora puedes seleccionar 1, 2, 3 o todas las suscripciones simultáneamente con casillas de verificación al crear un usuario.',
-    '📋 **Registro Automático de Despliegues:** Anuncio visual y detallado en este canal de auditoría cada vez que el bot arranca con una nueva actualización.'
+    '🧹 **Limpieza y Optimización:** Eliminación de dependencias obsoletas de Python (`keyauth_bridge.py`) y del comando legado `/permisos`.'
   ],
   categories: {
     agregado: [
@@ -28,7 +28,12 @@ module.exports = {
     ],
     mejorado: [
       'Bucle Keep-Alive en segundo plano cada 25 minutos.',
-      'Plantillas de entrega de WhatsApp con desglose de múltiples suscripciones combinadas.'
+      'Plantillas de entrega de WhatsApp con desglose de múltiples suscripciones combinadas.',
+      'Ejecución de KeyAuth en Node.js puro sin procesos hijos de Python ni consumo innecesario de RAM.'
+    ],
+    eliminado: [
+      'Puente de Python (`keyauth_bridge.py`) obsoleto retirado del repositorio.',
+      'Comando legado `/permisos` retirado para unificar todo en `/revendedor`.'
     ]
   }
 };

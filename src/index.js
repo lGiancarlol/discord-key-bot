@@ -324,7 +324,17 @@ client.once(Events.ClientReady, async () => {
             value: changelog.categories.mejorado.map((c) => `• ${c}`).join('\n') || 'Ninguno',
             inline: false,
           }
-        )
+        );
+
+      if (changelog.categories?.eliminado && changelog.categories.eliminado.length > 0) {
+        changeEmbed.addFields({
+          name: '🗑️ Lo que se eliminó / simplificó:',
+          value: changelog.categories.eliminado.map((c) => `• ${c}`).join('\n'),
+          inline: false,
+        });
+      }
+
+      changeEmbed
         .setFooter({ text: `Sistema de Control de Versiones • Auth Gateway v${changelog.version}` })
         .setTimestamp();
 

@@ -170,44 +170,6 @@ const commands = [
     .setDescription('Ver tu lista personal de licencias creadas y gestionar HWID'),
 
   new SlashCommandBuilder()
-    .setName('permisos')
-    .setDescription('Administrar permisos por rol o usuario (Legado)')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addSubcommand((sub) =>
-      sub
-        .setName('asignar')
-        .setDescription('Asignar permisos a un usuario o rol')
-        .addMentionableOption((opt) =>
-          opt
-            .setName('destino')
-            .setDescription('Usuario o Rol a quien dar permiso')
-            .setRequired(true)
-        )
-        .addStringOption((opt) =>
-          opt
-            .setName('plataformas')
-            .setDescription('Plataformas separadas por coma: bypass, bypass_uid, mycheats, keyauth, realauthx, all')
-            .setRequired(true)
-        )
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('revocar')
-        .setDescription('Revocar permisos a un usuario o rol')
-        .addMentionableOption((opt) =>
-          opt
-            .setName('destino')
-            .setDescription('Usuario o Rol a quien revocar')
-            .setRequired(true)
-        )
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('listar')
-        .setDescription('Listar todos los permisos activos configurados')
-    ),
-
-  new SlashCommandBuilder()
     .setName('stats')
     .setDescription('Ver estadísticas de keys generadas y estado de las APIs')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
