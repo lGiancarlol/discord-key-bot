@@ -308,28 +308,32 @@ client.once(Events.ClientReady, async () => {
           `📅 *Fecha de Despliegue: ${changelog.releaseDate}*\n\n` +
           changelog.highlights.join('\n\n')
         )
-        .addFields(
-          {
-            name: '🟢 Lo que se agregó:',
-            value: changelog.categories.agregado.map((c) => `• ${c}`).join('\n') || 'Ninguno',
-            inline: false,
-          },
-          {
-            name: '🛠️ Lo que se arregló:',
-            value: changelog.categories.arreglado.map((c) => `• ${c}`).join('\n') || 'Ninguno',
-            inline: false,
-          },
-          {
-            name: '⚡ Lo que se mejoró:',
-            value: changelog.categories.mejorado.map((c) => `• ${c}`).join('\n') || 'Ninguno',
-            inline: false,
-          }
-        );
-
-      if (changelog.categories?.eliminado && changelog.categories.eliminado.length > 0) {
+      const cats = changelog.categories || {};
+      if (cats.agregado && cats.agregado.length > 0) {
+        changeEmbed.addFields({
+          name: '🟢 Lo que se agregó:',
+          value: cats.agregado.map((c) => `• ${c}`).join('\n'),
+          inline: false,
+        });
+      }
+      if (cats.arreglado && cats.arreglado.length > 0) {
+        changeEmbed.addFields({
+          name: '🛠️ Lo que se arregló:',
+          value: cats.arreglado.map((c) => `• ${c}`).join('\n'),
+          inline: false,
+        });
+      }
+      if (cats.mejorado && cats.mejorado.length > 0) {
+        changeEmbed.addFields({
+          name: '⚡ Lo que se mejoró:',
+          value: cats.mejorado.map((c) => `• ${c}`).join('\n'),
+          inline: false,
+        });
+      }
+      if (cats.eliminado && cats.eliminado.length > 0) {
         changeEmbed.addFields({
           name: '🗑️ Lo que se eliminó / simplificó:',
-          value: changelog.categories.eliminado.map((c) => `• ${c}`).join('\n'),
+          value: cats.eliminado.map((c) => `• ${c}`).join('\n'),
           inline: false,
         });
       }

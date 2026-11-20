@@ -1,39 +1,29 @@
 /**
- * Registro de Versión y Changelog del Despliegue
- * Cada vez que se actualiza el bot, este archivo describe detalladamente
- * las novedades, arreglos y mejoras que se anuncian en el canal de logs al encender.
+ * Registro de Versión y Novedades del Último Despliegue
+ * Este archivo contiene ÚNICAMENTE los cambios realizados en el deploy actual.
  */
 module.exports = {
-  version: '2.5.1',
-  build: '20261120_2',
+  version: '2.5.2',
+  build: '20261120_1415',
   releaseDate: '2026-11-20',
-  releaseTitle: '⚡ Auto-Recuperación de Sesiones, Multi-Suscripciones & Optimización de Código',
+  releaseTitle: '🧹 Depuración de Código & Optimización de Rendimiento',
   highlights: [
-    '🔄 **Auto-Recuperación y Keep-Alive (25 min):** Las sesiones web de MyCheats, Bypass y RealAuthX se renuevan y auto-reparan automáticamente sin necesidad de reiniciar el bot.',
-    '👥 **Soporte Multi-Cuentas:** Posibilidad de configurar 2 o más cuentas independientes de la misma plataforma en un servidor (ej: MyCheats Cuenta 1 y Cuenta 2).',
-    '🏷️ **KeyAuth Multi-App Stock:** Soporte para clasificar y reclamar stock de KeyAuth por juego/cuenta (ej: Free Fire, Warzone).',
-    '🎯 **Multi-Suscripciones en MyCheats:** Ahora puedes seleccionar 1, 2, 3 o todas las suscripciones simultáneamente con casillas de verificación al crear un usuario.',
-    '🧹 **Limpieza y Optimización:** Eliminación de dependencias obsoletas de Python (`keyauth_bridge.py`) y del comando legado `/permisos`.'
+    '🗑️ **KeyAuth 100% Nativo:** Retirado el script puente de Python (`keyauth_bridge.py`). Ahora KeyAuth corre en Node.js puro sin dependencias externas ni consumo innecesario de RAM en Sparked Host.',
+    '🗑️ **Unificación de Comandos:** Retirado el comando legado `/permisos` para evitar confusiones y unificar toda la administración en `/revendedor` y el Panel Web.',
+    '📋 **Novedades Exclusivas por Deploy:** Los logs de inicio ahora muestran única y exclusivamente las novedades del último deploy subido, sin acumular cambios anteriores.'
   ],
   categories: {
-    agregado: [
-      'Selección múltiple de suscripciones en WorldCheats (MyCheats).',
-      'Soporte multi-cuentas por plataforma con credenciales y sesiones aisladas.',
-      'Stock de KeyAuth clasificado por aplicación con menú selector interactivo.',
-      'Sistema de Changelog automático en canal de logs al iniciar el bot.'
-    ],
+    agregado: [],
     arreglado: [
-      'Error de sesión expirada y captcha en MyCheats y Bypass UID solucionado con auto-relogin y purga limpia de cookies.',
-      'Títulos y campos de logs de auditoría 100% dinámicos con los nombres personalizados del servidor.'
+      'El anuncio de inicio en logs ahora muestra única y exclusivamente los cambios del último despliegue subido.'
     ],
     mejorado: [
-      'Bucle Keep-Alive en segundo plano cada 25 minutos.',
-      'Plantillas de entrega de WhatsApp con desglose de múltiples suscripciones combinadas.',
-      'Ejecución de KeyAuth en Node.js puro sin procesos hijos de Python ni consumo innecesario de RAM.'
+      'Rendimiento y velocidad de respuesta de KeyAuth al operar 100% nativo en Node.js.',
+      'Formato del embed de despliegue en logs: solo muestra las categorías que tuvieron cambios reales.'
     ],
     eliminado: [
-      'Puente de Python (`keyauth_bridge.py`) obsoleto retirado del repositorio.',
-      'Comando legado `/permisos` retirado para unificar todo en `/revendedor`.'
+      'Puente de Python (`keyauth_bridge.py`) y llamadas a subprocesos hijos (`child_process`).',
+      'Comando legado `/permisos`.'
     ]
   }
 };
