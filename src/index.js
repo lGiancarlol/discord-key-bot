@@ -296,6 +296,44 @@ client.once(Events.ClientReady, async () => {
       .setTimestamp()
   );
 
+  // Enviar Embed de Novedades del Despliegue en el canal de logs
+  try {
+    const changelog = require('./version');
+    if (changelog && changelog.version) {
+      const changeEmbed = new EmbedBuilder()
+        .setColor(0x3b82f6)
+        .setTitle(`🚀 [ACTUALIZACIÓN] Versión ${changelog.version} Desplegada`)
+        .setDescription(
+          `**${changelog.releaseTitle}**\n` +
+          `📅 *Fecha de Despliegue: ${changelog.releaseDate}*\n\n` +
+          changelog.highlights.join('\n\n')
+        )
+        .addFields(
+          {
+            name: '🟢 Lo que se agregó:',
+            value: changelog.categories.agregado.map((c) => `• ${c}`).join('\n') || 'Ninguno',
+            inline: false,
+          },
+          {
+            name: '🛠️ Lo que se arregló:',
+            value: changelog.categories.arreglado.map((c) => `• ${c}`).join('\n') || 'Ninguno',
+            inline: false,
+          },
+          {
+            name: '⚡ Lo que se mejoró:',
+            value: changelog.categories.mejorado.map((c) => `• ${c}`).join('\n') || 'Ninguno',
+            inline: false,
+          }
+        )
+        .setFooter({ text: `Sistema de Control de Versiones • Auth Gateway v${changelog.version}` })
+        .setTimestamp();
+
+      await logToAdminChannel(changeEmbed, guild.id);
+    }
+  } catch (verErr) {
+    console.warn('[Version] No se pudo enviar el embed de changelog:', verErr.message);
+  }
+
   // Iniciar monitor periódico de salud
   startSystemMonitor(guild);
 });
@@ -1577,7 +1615,9 @@ client.on('interactionCreate', async (interaction) => {
             const subRow = new ActionRowBuilder().addComponents(
               new StringSelectMenuBuilder()
                 .setCustomId(`select_mycheats_sub_${onlyPid}`)
-                .setPlaceholder(`Selecciona la suscripción de ${customName || 'WorldCheats'}`.slice(0, 100))
+                .setPlaceholder(`Selecciona 1 o varias suscripciones de ${customName || 'WorldCheats'}`.slice(0, 100))
+                .setMinValues(1)
+                .setMaxValues(subOptions.length)
                 .addOptions(subOptions)
             );
             return interaction.reply({
@@ -1908,11 +1948,13 @@ client.on('interactionCreate', async (interaction) => {
           const subRow = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
               .setCustomId(`select_mycheats_sub_${selectedProvider}`)
-              .setPlaceholder(`Selecciona la suscripción de ${customName}`.slice(0, 100))
+              .setPlaceholder(`Selecciona 1 o varias suscripciones de ${customName}`.slice(0, 100))
+              .setMinValues(1)
+              .setMaxValues(subOptions.length)
               .addOptions(subOptions)
           );
           return interaction.update({
-            content: `👤 **Selecciona el tipo de suscripción para ${customName}:**`,
+            content: `👤 **Selecciona el tipo de suscripción para ${customName}:**\n*(Puedes marcar una, varias o todas)*`,
             components: [subRow],
           });
         }
@@ -1964,15 +2006,19 @@ client.on('interactionCreate', async (interaction) => {
             ephemeral: true,
           });
         }
-        const chosenSubId = values[0];
+        const chosenSubIds = values; // Array de suscripciones seleccionadas
+        const joinedSubIds = chosenSubIds.join('-');
         const provider = providerManager.getForGuild(targetPid, interaction.guildId, db);
         const customName = db.getProviderMetadata(interaction.guildId, targetPid)?.name || 'WorldCheats (Panel VIP)';
         const subs = await provider.getSubscriptions();
-        const foundSub = subs.find((s) => String(s.id) === String(chosenSubId));
-        const subName = foundSub ? foundSub.name : '';
+        const foundNames = chosenSubIds.map((id) => {
+          const s = subs.find((sub) => String(sub.id) === String(id));
+          return s ? s.name : `Sub #${id}`;
+        });
+        const subName = foundNames.join(' + ');
         const defaultPrefix = db.forGuild(interaction.guildId).getDefaultPrefix();
         return interaction.showModal(
-          getCreateKeyModal(targetPid, perms.maxDays, defaultPrefix, chosenSubId, subName, customName)
+          getCreateKeyModal(targetPid, perms.maxDays, defaultPrefix, joinedSubIds, subName, customName)
         );
       }
 
@@ -2519,7 +2565,7 @@ client.on('interactionCreate', async (interaction) => {
           providerId = 'keyauth';
           targetKeyAuthApp = decodeURIComponent(rawTarget.replace('keyauth_', ''));
         } else {
-          const matchSub = rawTarget.match(/^(.+)_(\d+)$/);
+          const matchSub = rawTarget.match(/^(.+)_([0-9-]+)$/);
           if (matchSub) {
             providerId = matchSub[1];
             chosenSubId = matchSub[2];

@@ -158,12 +158,28 @@ class MyCheatsProvider extends BaseProvider {
   /**
    * Generar Usuario y Contraseña en WorldCheats (MyCheats)
    * Contraseña siempre por defecto = 1
+   * Admite 1 o múltiples suscripciones (primary + extra_subs)
    */
   async createKey({ days, count = 1, prefix = 'VIP', note = '', subId = null }) {
     return this.executeWithAutoAuth(async () => {
       const createdUsers = [];
       const appId = (this.config.appId && String(this.config.appId).trim()) || this.detectedAppId || '146';
-      const effectiveSubId = (subId && String(subId).trim()) || (this.config.defaultSubId && String(this.config.defaultSubId).trim()) || '237';
+
+      let allSubIds = [];
+      if (Array.isArray(subId)) {
+        allSubIds = subId.map(String).map((s) => s.trim()).filter(Boolean);
+      } else if (typeof subId === 'string' && (subId.includes(',') || subId.includes('-') || subId.includes('+'))) {
+        allSubIds = subId.split(/[,+\-]/).map((s) => s.trim()).filter(Boolean);
+      } else if (subId && String(subId).trim()) {
+        allSubIds = [String(subId).trim()];
+      } else if (this.config.defaultSubId) {
+        allSubIds = [String(this.config.defaultSubId).trim()];
+      } else {
+        allSubIds = ['237'];
+      }
+
+      const primarySubId = allSubIds[0] || '237';
+      const extraSubIds = allSubIds.slice(1).map(Number).filter((n) => !isNaN(n) && n > 0 && n !== Number(primarySubId));
 
       const subNames = {
         '237': 'Undetect (Level 1)',
@@ -171,9 +187,9 @@ class MyCheatsProvider extends BaseProvider {
         '241': 'Classic (Level 3)',
         '245': 'SkinChanger (Level 5)',
       };
-      const subDisplayName = subNames[effectiveSubId] || `Sub #${effectiveSubId}`;
+      const subDisplayName = allSubIds.map((id) => subNames[id] || `Sub #${id}`).join(' + ');
 
-      console.log(`[WorldCheats] Generando ${count} cuenta(s) en app_id=${appId}, sub_id=${effectiveSubId} (${subDisplayName}) con credenciales de usuario="${this.config.username}"`);
+      console.log(`[WorldCheats] Generando ${count} cuenta(s) en app_id=${appId}, primary_sub=${primarySubId}, extra_subs=${JSON.stringify(extraSubIds)} (${subDisplayName}) con usuario="${this.config.username}"`);
 
       for (let i = 0; i < count; i++) {
         const randSuffix = Math.floor(1000 + Math.random() * 9000);
@@ -187,8 +203,8 @@ class MyCheatsProvider extends BaseProvider {
         params.append('app_user_expiry', '');
         params.append('app_user_username', username);
         params.append('app_user_password', password);
-        params.append('app_user_subscription', String(effectiveSubId));
-        params.append('app_user_extra_subs', '[]');
+        params.append('app_user_subscription', String(primarySubId));
+        params.append('app_user_extra_subs', JSON.stringify(extraSubIds));
         params.append('expiry_unit', 'Days');
         params.append('expiry_days', String(days));
 
@@ -229,7 +245,7 @@ class MyCheatsProvider extends BaseProvider {
             password: '1',
             key: `${altUsername}:1`,
             days,
-            subId: effectiveSubId,
+            subId: allSubIds.join(','),
             subName: subDisplayName,
           });
         } else {
@@ -239,7 +255,7 @@ class MyCheatsProvider extends BaseProvider {
             password: '1',
             key: `${username}:1`,
             days,
-            subId: effectiveSubId,
+            subId: allSubIds.join(','),
             subName: subDisplayName,
           });
         }
