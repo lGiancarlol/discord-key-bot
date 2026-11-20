@@ -5,12 +5,13 @@ const {
   ActionRowBuilder,
 } = require('discord.js');
 
-function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = '', subId = '', subName = '', customName = '') {
+function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = '', subId = '', subName = '', customName = '', appName = '') {
   // Modal específico para KeyAuth (Elite Pro): Funciona por stock precargado
-  if (providerId === 'keyauth') {
+  if (providerId === 'keyauth' || providerId.startsWith('keyauth_')) {
+    const modalCustomId = appName ? `modal_create_keyauth_${encodeURIComponent(appName)}` : `modal_create_${providerId}`;
     const modal = new ModalBuilder()
-      .setCustomId('modal_create_keyauth')
-      .setTitle(`🔑 Reclamar ${customName || 'KeyAuth (Elite Pro)'}`.slice(0, 45));
+      .setCustomId(modalCustomId)
+      .setTitle(`🔑 Reclamar ${customName || (appName ? `KeyAuth (${appName})` : 'KeyAuth (Elite Pro)')}`.slice(0, 45));
 
     const daysInput = new TextInputBuilder()
       .setCustomId('input_days')
@@ -47,21 +48,21 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = 
     return modal;
   }
 
-  const isUserAccount = providerId === 'mycheats';
-  const isUid = providerId === 'bypass_uid';
-  const isRealAuthX = providerId === 'realauthx';
+  const isUserAccount = providerId === 'mycheats' || providerId.startsWith('mycheats_');
+  const isUid = providerId === 'bypass_uid' || providerId.startsWith('bypass_uid_');
+  const isRealAuthX = providerId === 'realauthx' || providerId.startsWith('realauthx_');
 
   let title = customName ? `⚡ Crear ${customName}`.slice(0, 45) : '⚡ Crear Licencia Bypass APK';
   let modalCustomId = `modal_create_${providerId}`;
 
   if (isUserAccount) {
     title = subName ? `👤 ${subName}`.slice(0, 45) : `👤 Crear ${customName || 'Usuario (VIP)'}`.slice(0, 45);
-    if (subId) modalCustomId = `modal_create_mycheats_${subId}`;
+    if (subId) modalCustomId = `modal_create_${providerId}_${subId}`;
   }
   if (isUid) title = customName ? `🛡️ Crear ${customName}`.slice(0, 45) : '🛡️ Crear Licencia Bypass UID (Auto ON)';
   if (isRealAuthX) {
     title = subName ? `🎮 ${subName}`.slice(0, 45) : `🎮 Crear ${customName || 'RealAuthX'}`.slice(0, 45);
-    if (subId) modalCustomId = `modal_create_realauthx_${subId}`;
+    if (subId) modalCustomId = `modal_create_${providerId}_${subId}`;
   }
 
   const modal = new ModalBuilder()
@@ -90,7 +91,7 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = 
     .setMaxLength(1)
     .setRequired(false);
 
-  const isBypass = providerId === 'bypass' || providerId === 'bypass_uid';
+  const isBypass = providerId.startsWith('bypass');
 
   const prefixLabel = isUserAccount
     ? 'Prefijo o Nombre de Usuario (Contraseña: 1)'
@@ -135,7 +136,7 @@ function getCreateKeyModal(providerId = 'bypass', maxDays = 30, defaultPrefix = 
 }
 
 function getDeleteKeyModal(providerId = 'bypass', customName = '') {
-  const isUserAccount = providerId === 'mycheats';
+  const isUserAccount = providerId === 'mycheats' || providerId.startsWith('mycheats_');
   const label = customName ? ` (${customName})` : '';
   const modal = new ModalBuilder()
     .setCustomId(`modal_delete_${providerId}`)
@@ -154,7 +155,7 @@ function getDeleteKeyModal(providerId = 'bypass', customName = '') {
 }
 
 function getResetHwidModal(providerId = 'bypass', customName = '') {
-  const isUserAccount = providerId === 'mycheats';
+  const isUserAccount = providerId === 'mycheats' || providerId.startsWith('mycheats_');
   const label = customName ? ` (${customName})` : '';
   const modal = new ModalBuilder()
     .setCustomId(`modal_reset_${providerId}`)

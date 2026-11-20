@@ -19,6 +19,10 @@ function generateRandomKey(prefix = 'UID') {
 class BypassUidProvider extends BaseProvider {
   constructor(config) {
     super(config);
+    this.resetSession();
+  }
+
+  resetSession() {
     this.jar = new CookieJar();
     this.client = wrapper(
       axios.create({
@@ -58,8 +62,8 @@ class BypassUidProvider extends BaseProvider {
     throw new Error(`[Bypass UID] Fallo al resolver captcha (${purpose}) tras ${maxAttempts} intentos.`);
   }
 
-  async login(retries = 2) {
-    for (let i = 0; i <= retries; i++) {
+  async login(retries = 3) {
+    for (let i = 0; i < retries; i++) {
       try {
         const captcha = await this.getCaptcha('login');
         const res = await this.client.post('/api/auth/login', {
@@ -77,7 +81,10 @@ class BypassUidProvider extends BaseProvider {
       } catch (err) {
         this.authenticated = false;
         const msg = err.response?.data?.message || err.message;
-        if (i < retries && String(msg).toLowerCase().includes('captcha')) {
+        if (i < retries - 1) {
+          console.warn(`[Bypass UID] Intento de login ${i + 1} falló (${msg}), limpiando sesión y reintentando...`);
+          this.resetSession();
+          await new Promise((r) => setTimeout(r, 1000));
           continue;
         }
         throw new Error(`[Bypass UID] Error de autenticación: ${msg}`);
@@ -95,9 +102,24 @@ class BypassUidProvider extends BaseProvider {
     const start = Date.now();
     try {
       await this.ensureAuth();
+      const testRes = await this.client.get('/api/licenses');
+      if (testRes.status === 401) {
+        console.warn(`[Bypass UID] checkHealth detectó sesión expirada. Renovando...`);
+        this.resetSession();
+        await this.login();
+      }
       const latency = Date.now() - start;
       return { online: true, latency, message: 'Sesión activa y panel operativo' };
     } catch (err) {
+      if (err.response?.status === 401) {
+        try {
+          this.resetSession();
+          await this.login();
+          return { online: true, latency: Date.now() - start, message: 'Sesión renovada exitosamente' };
+        } catch (loginErr) {
+          return { online: false, latency: Date.now() - start, error: loginErr.message };
+        }
+      }
       return { online: false, latency: Date.now() - start, error: err.message };
     }
   }
@@ -132,7 +154,8 @@ class BypassUidProvider extends BaseProvider {
         return customKey || 'KEY_CREATED';
       } catch (err) {
         if (err.response?.status === 401) {
-          this.authenticated = false;
+          console.warn(`[Bypass UID] ⚠️ Sesión caducada al crear clave. Reseteando sesión y reintentando...`);
+          this.resetSession();
           await this.login();
           return this.createSingleKey(days, note, customKey, retries - 1);
         }
@@ -163,7 +186,7 @@ class BypassUidProvider extends BaseProvider {
       return createdKeys;
     } catch (err) {
       if (err.response?.status === 401) {
-        this.authenticated = false;
+        this.resetSession();
         await this.login();
         return this.createKey({ days, count, prefix, note });
       }
@@ -184,7 +207,7 @@ class BypassUidProvider extends BaseProvider {
       return res.data?.message || 'HWID reseteado correctamente en Bypass UID.';
     } catch (err) {
       if (err.response?.status === 401) {
-        this.authenticated = false;
+        this.resetSession();
         await this.login();
         return this.resetHwid(key);
       }
@@ -205,7 +228,7 @@ class BypassUidProvider extends BaseProvider {
       return res.data?.message || 'Licencia eliminada correctamente en Bypass UID.';
     } catch (err) {
       if (err.response?.status === 401) {
-        this.authenticated = false;
+        this.resetSession();
         await this.login();
         return this.deleteKey(key);
       }
@@ -224,7 +247,7 @@ class BypassUidProvider extends BaseProvider {
       return res.data?.licenses || [];
     } catch (err) {
       if (err.response?.status === 401) {
-        this.authenticated = false;
+        this.resetSession();
         await this.login();
         return this.listKeys();
       }

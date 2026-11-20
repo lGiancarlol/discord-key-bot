@@ -35,15 +35,15 @@ class KeyAuthProvider extends BaseProvider {
     });
   }
 
-  async createKey({ days, count = 1, prefix = 'Tryhard', note = '' }) {
-    // 1. PRIORIDAD: Sistema de Stock Precargado por Duración (100% Sparked Host sin Python)
+  async createKey({ days, count = 1, prefix = 'Tryhard', note = '', app = null }) {
+    // 1. PRIORIDAD: Sistema de Stock Precargado por Duración y Aplicación
     const targetDays = days ? Number(days) : null;
     const stockItems = [];
     const database = this.db || db;
     const guildId = this.guildId || null;
 
     for (let i = 0; i < count; i++) {
-      const item = database.popStock('keyauth', targetDays, guildId);
+      const item = database.popStock('keyauth', targetDays, guildId, app);
       if (item) {
         stockItems.push(item);
       } else {
@@ -57,13 +57,14 @@ class KeyAuthProvider extends BaseProvider {
     }
 
     // Si se solicitó una duración específica y no hay stock de esa duración, avisar con el inventario disponible
-    const breakdown = database.getStockBreakdown('keyauth', guildId);
+    const breakdown = database.getStockBreakdown('keyauth', guildId, app);
     const availableDurations = Object.entries(breakdown).filter(([_, c]) => c > 0);
 
+    const appLabel = app ? ` (${app})` : '';
     if (availableDurations.length > 0) {
       const breakdownText = availableDurations.map(([d, c]) => `• ${d} días: ${c} claves disponibles`).join('\n');
       throw new Error(
-        `📦 No hay stock disponible de ${targetDays || 30} días para KeyAuth (Elite Pro).\n\n` +
+        `📦 No hay stock disponible de ${targetDays || 30} días para KeyAuth${appLabel}.\n\n` +
         `Duraciones disponibles actualmente en inventario:\n${breakdownText}`
       );
     }

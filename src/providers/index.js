@@ -5,11 +5,25 @@ const KeyAuthProvider = require('./KeyAuthProvider');
 const RealAuthXProvider = require('./RealAuthXProvider');
 const config = require('../config');
 
+function getBaseProviderType(id) {
+  if (!id) return 'bypass';
+  if (id === 'mycheats' || id.startsWith('mycheats_')) return 'mycheats';
+  if (id === 'realauthx' || id.startsWith('realauthx_')) return 'realauthx';
+  if (id === 'bypass_uid' || id.startsWith('bypass_uid_')) return 'bypass_uid';
+  if (id === 'bypass' || id.startsWith('bypass_')) return 'bypass';
+  if (id === 'keyauth' || id.startsWith('keyauth_')) return 'keyauth';
+  return id;
+}
+
 class ProviderManager {
   constructor() {
     this.providers = new Map();
     this.guildProviders = new Map();
     this.init();
+  }
+
+  getBaseType(id) {
+    return getBaseProviderType(id);
   }
 
   init() {
@@ -38,11 +52,13 @@ class ProviderManager {
   getForGuild(id, guildId, db = null) {
     if (!guildId) return this.get(id);
 
+    const baseType = getBaseProviderType(id);
+
     // Revisar si la guild tiene configuración personalizada para este proveedor
     let customCfg = null;
     if (db) {
       const gConfig = db.getGuildConfig(guildId);
-      customCfg = gConfig?.providersConfig?.[id];
+      customCfg = gConfig?.providersConfig?.[id] || (id !== baseType ? gConfig?.providersConfig?.[baseType] : null);
     }
 
     // Determinar si hay configuración personalizada activa y válida
@@ -53,7 +69,7 @@ class ProviderManager {
 
     const hasCustomSettings = hasCustomUser || hasCustomKey || hasCustomUrl || hasExplicitDisabled;
 
-    if (!hasCustomSettings) {
+    if (!hasCustomSettings && id === baseType) {
       return this.get(id);
     }
 
@@ -62,31 +78,32 @@ class ProviderManager {
       return this.guildProviders.get(cacheKey);
     }
 
-    const baseConfig = config.providers[id] || {};
+    const baseConfig = config.providers[baseType] || config.providers[id] || {};
     const mergedConfig = {
       ...baseConfig,
       ...customCfg,
       id,
-      baseUrl: (customCfg.baseUrl && String(customCfg.baseUrl).trim()) || baseConfig.baseUrl,
+      baseUrl: (customCfg?.baseUrl && String(customCfg.baseUrl).trim()) || baseConfig.baseUrl,
       username: hasCustomUser ? String(customCfg.username).trim() : baseConfig.username,
-      password: (customCfg.password && String(customCfg.password).trim()) || baseConfig.password,
+      password: (customCfg?.password && String(customCfg.password).trim()) || baseConfig.password,
       sellerKey: hasCustomKey ? String(customCfg.sellerKey).trim() : baseConfig.sellerKey,
-      appId: (customCfg.appId && String(customCfg.appId).trim()) || baseConfig.appId,
-      defaultSubId: (customCfg.defaultSubId && String(customCfg.defaultSubId).trim()) || baseConfig.defaultSubId,
+      appId: (customCfg?.appId && String(customCfg.appId).trim()) || baseConfig.appId,
+      defaultSubId: (customCfg?.defaultSubId && String(customCfg.defaultSubId).trim()) || baseConfig.defaultSubId,
     };
 
     let instance = null;
-    if (id === 'bypass') instance = new BypassProvider(mergedConfig);
-    else if (id === 'bypass_uid') instance = new BypassUidProvider(mergedConfig);
-    else if (id === 'mycheats') instance = new MyCheatsProvider(mergedConfig);
-    else if (id === 'keyauth') instance = new KeyAuthProvider(mergedConfig);
-    else if (id === 'realauthx') instance = new RealAuthXProvider(mergedConfig);
+    if (baseType === 'bypass') instance = new BypassProvider(mergedConfig);
+    else if (baseType === 'bypass_uid') instance = new BypassUidProvider(mergedConfig);
+    else if (baseType === 'mycheats') instance = new MyCheatsProvider(mergedConfig);
+    else if (baseType === 'keyauth') instance = new KeyAuthProvider(mergedConfig);
+    else if (baseType === 'realauthx') instance = new RealAuthXProvider(mergedConfig);
     else instance = this.get(id);
 
     if (instance) {
       instance.guildId = guildId;
       instance.db = db;
-      console.log(`[ProviderManager] ⚡ Proveedor exclusivo activado para guild ${guildId} (${id}): usuario="${mergedConfig.username || 'KeyAuth'}" appId="${mergedConfig.appId || 'N/A'}"`);
+      instance.providerId = id;
+      console.log(`[ProviderManager] ⚡ Proveedor exclusivo activado para guild ${guildId} (${id} -> ${baseType}): usuario="${mergedConfig.username || 'KeyAuth'}" appId="${mergedConfig.appId || 'N/A'}"`);
     }
 
     this.guildProviders.set(cacheKey, instance);
@@ -110,34 +127,80 @@ class ProviderManager {
   }
 
   async checkAllHealth(guildId = null, db = null) {
-    const targets = [
-      { id: 'bypass', fallbackName: 'Bypass APK' },
-      { id: 'bypass_uid', fallbackName: 'Bypass UID (Auto ON)' },
-      { id: 'mycheats', fallbackName: 'WorldCheats (Panel VIP)' },
-      { id: 'keyauth', fallbackName: 'KeyAuth (Elite Pro)' },
-      { id: 'realauthx', fallbackName: 'RealAuthX (Roblox)' },
-    ];
+    const enabledList = (guildId && db && typeof db.getEnabledProviders === 'function')
+      ? db.getEnabledProviders(guildId)
+      : ['bypass', 'bypass_uid', 'mycheats', 'keyauth', 'realauthx'];
 
     const results = {};
-    for (const t of targets) {
+    for (const pId of enabledList) {
       const customName = (guildId && db && typeof db.getProviderMetadata === 'function')
-        ? db.getProviderMetadata(guildId, t.id)?.name
+        ? db.getProviderMetadata(guildId, pId)?.name
         : null;
-      const displayName = customName && customName.trim() ? customName.trim() : t.fallbackName;
+      const displayName = customName && customName.trim() ? customName.trim() : pId;
 
-      const p = this.getForGuild(t.id, guildId, db);
+      const p = this.getForGuild(pId, guildId, db);
       if (p && typeof p.checkHealth === 'function') {
         try {
           const res = await p.checkHealth();
-          results[t.id] = { name: displayName, ...res };
+          results[pId] = { name: displayName, ...res };
         } catch (err) {
-          results[t.id] = { name: displayName, online: false, error: err.message };
+          results[pId] = { name: displayName, online: false, error: err.message };
         }
       } else {
-        results[t.id] = { name: displayName, online: true, message: 'Operativo' };
+        results[pId] = { name: displayName, online: true, message: 'Operativo' };
       }
     }
     return results;
+  }
+
+  startKeepAlive(intervalMinutes = 25, db = null) {
+    if (this._keepAliveInterval) {
+      clearInterval(this._keepAliveInterval);
+    }
+
+    const intervalMs = Math.max(10, intervalMinutes) * 60 * 1000;
+    console.log(`[ProviderManager] 💓 Proceso Keep-Alive de sesiones iniciado (frecuencia: cada ${intervalMinutes} min).`);
+
+    this._keepAliveInterval = setInterval(async () => {
+      try {
+        console.log(`[Keep-Alive] 💓 Comprobando salud y renovando sesiones de plataformas activas...`);
+        // 1. Proveedores globales por defecto
+        for (const [id, provider] of this.providers.entries()) {
+          if (provider && typeof provider.checkHealth === 'function') {
+            try {
+              const res = await provider.checkHealth();
+              if (res.online) {
+                console.log(`[Keep-Alive] ✅ ${id} activo (${res.latency || 0}ms)`);
+              } else {
+                console.warn(`[Keep-Alive] ⚠️ ${id} reportó inactividad: ${res.error || res.message}`);
+              }
+            } catch (pErr) {
+              console.warn(`[Keep-Alive] ⚠️ Error en ping de ${id}: ${pErr.message}`);
+            }
+          }
+        }
+
+        // 2. Proveedores exclusivos por servidor
+        for (const [cacheKey, provider] of this.guildProviders.entries()) {
+          if (provider && typeof provider.checkHealth === 'function') {
+            try {
+              const res = await provider.checkHealth();
+              if (res.online) {
+                console.log(`[Keep-Alive] ✅ Servidor ${cacheKey} activo (${res.latency || 0}ms)`);
+              } else {
+                console.warn(`[Keep-Alive] ⚠️ Servidor ${cacheKey} sesión inactiva: ${res.error || res.message}`);
+              }
+            } catch (gpErr) {
+              console.warn(`[Keep-Alive] ⚠️ Error en ping de ${cacheKey}: ${gpErr.message}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Keep-Alive] Error en ciclo de mantenimiento de sesiones:', err.message);
+      }
+    }, intervalMs);
+
+    if (this._keepAliveInterval.unref) this._keepAliveInterval.unref();
   }
 }
 

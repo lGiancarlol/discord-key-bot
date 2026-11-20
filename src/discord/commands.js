@@ -148,6 +148,12 @@ const commands = [
             .setDescription('Duración de estas claves en días (ej: 30) - por defecto 30')
             .setRequired(false)
         )
+        .addStringOption((opt) =>
+          opt
+            .setName('app')
+            .setDescription('Cuenta / Aplicación de KeyAuth (ej: Free Fire, Warzone, Principal)')
+            .setRequired(false)
+        )
     )
     .addSubcommand((sub) =>
       sub

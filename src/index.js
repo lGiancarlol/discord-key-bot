@@ -235,6 +235,13 @@ client.once(Events.ClientReady, async () => {
     console.error('[Dashboard Web] Error al iniciar servidor web:', webErr);
   }
 
+  // Iniciar monitor Keep-Alive de sesiones para proveedores web (cada 25 minutos)
+  try {
+    providerManager.startKeepAlive(25, db);
+  } catch (kaErr) {
+    console.error('[Keep-Alive] Error al iniciar monitor de sesiones:', kaErr);
+  }
+
   const guild = client.guilds.cache.get(config.discord.guildId);
 
   if (!guild) {
@@ -1044,10 +1051,11 @@ client.on('interactionCreate', async (interaction) => {
 
           const rawKeys = interaction.options.getString('claves');
           const duracion = interaction.options.getInteger('duracion') || 30;
+          const appName = (interaction.options.getString('app') || 'Principal').trim();
           const keysList = rawKeys.split(/[\s,\n]+/).map((k) => k.trim()).filter((k) => k.length > 0);
 
           const gId = interaction.guildId || config.discord.guildId;
-          const result = db.addStock(providerId, keysList, duracion, gId);
+          const result = db.addStock(providerId, keysList, duracion, gId, appName);
           const pMeta = db.getProviderMetadata(gId, providerId);
           const pName = pMeta?.name || config.providers[providerId]?.name || 'KeyAuth (Elite Pro)';
 
@@ -1056,6 +1064,7 @@ client.on('interactionCreate', async (interaction) => {
             .setTitle('📦 Stock de Claves Actualizado')
             .setDescription(
               `• **Plataforma:** \`${pName}\`\n` +
+                `• **Cuenta / App:** \`${appName}\`\n` +
                 `• **Claves añadidas:** **+${result.added}**\n` +
                 `• **Duración configurada:** **${duracion} días**\n` +
                 `• **Stock total disponible:** **${result.total} claves**`
@@ -1071,6 +1080,7 @@ client.on('interactionCreate', async (interaction) => {
                 { name: 'Operador', value: `<@${interaction.user.id}>`, inline: true },
                 { name: 'Rango Operador', value: opAudit.role, inline: true },
                 { name: 'Plataforma', value: pName, inline: true },
+                { name: 'Cuenta / App', value: appName, inline: true },
                 { name: 'Claves Añadidas', value: `+${result.added} claves`, inline: true },
                 { name: 'Duración por Clave', value: `${duracion} días`, inline: true },
                 { name: 'Stock Total Disponible', value: `${result.total} claves`, inline: true }
@@ -1089,6 +1099,13 @@ client.on('interactionCreate', async (interaction) => {
           const keyCount = allStock.keyauth || 0;
           const icon = keyCount > 5 ? '🟢' : keyCount > 0 ? '🟡' : '🔴';
 
+          const keyAuthApps = db.getKeyAuthApps(gId);
+          let appsText = '';
+          if (keyAuthApps.length > 0) {
+            appsText = '\n\n📱 **Desglose por Cuentas/Aplicaciones:**\n' +
+              keyAuthApps.map((a) => `• **${a.name}:** \`${a.count} claves en stock\``).join('\n');
+          }
+
           const breakdown = db.getStockBreakdown('keyauth', gId);
           const breakdownLines = Object.entries(breakdown)
             .filter(([_, c]) => c > 0)
@@ -1099,9 +1116,11 @@ client.on('interactionCreate', async (interaction) => {
             .setColor(0x00d2d3)
             .setTitle('📦 Inventario de Stock Precargado')
             .setDescription(
-              `${icon} **KeyAuth (Elite Pro):** \`${keyCount} claves en total\`${breakdownText}\n\n` +
-              `⚡ **Bypass APK / UID:** \`Generación Automática (API Directa)\`\n` +
-              `⚡ **WorldCheats:** \`Generación Automática (API Directa)\`\n\n` +
+              `${icon} **KeyAuth (Elite Pro):** \`${keyCount} claves en total\`${breakdownText}` +
+              appsText +
+              `\n\n⚡ **Bypass APK / UID:** \`Generación Automática (API Directa)\`\n` +
+              `⚡ **WorldCheats:** \`Generación Automática (API Directa)\`\n` +
+              `⚡ **RealAuthX:** \`Generación Automática (API Directa)\`\n\n` +
               `💡 *Puedes solicitar claves de 1 día, 7 días, 15 días o 30 días según el stock disponible.*`
             )
             .setTimestamp();
@@ -1547,8 +1566,8 @@ client.on('interactionCreate', async (interaction) => {
         if (perms.allowedProviders.length === 1) {
           const onlyPid = perms.allowedProviders[0];
           const customName = db.getProviderMetadata(interaction.guildId, onlyPid)?.name;
-          if (onlyPid === 'mycheats') {
-            const provider = providerManager.getForGuild('mycheats', interaction.guildId, db);
+          if (onlyPid === 'mycheats' || onlyPid.startsWith('mycheats_')) {
+            const provider = providerManager.getForGuild(onlyPid, interaction.guildId, db);
             const subs = await provider.getSubscriptions();
             const subOptions = subs.map((s) => ({
               label: s.name.slice(0, 100),
@@ -1557,7 +1576,7 @@ client.on('interactionCreate', async (interaction) => {
             }));
             const subRow = new ActionRowBuilder().addComponents(
               new StringSelectMenuBuilder()
-                .setCustomId('select_mycheats_sub')
+                .setCustomId(`select_mycheats_sub_${onlyPid}`)
                 .setPlaceholder(`Selecciona la suscripción de ${customName || 'WorldCheats'}`.slice(0, 100))
                 .addOptions(subOptions)
             );
@@ -1566,6 +1585,28 @@ client.on('interactionCreate', async (interaction) => {
               components: [subRow],
               ephemeral: true,
             });
+          }
+
+          if (onlyPid === 'keyauth' || onlyPid.startsWith('keyauth_')) {
+            const keyAuthApps = db.getKeyAuthApps(interaction.guildId);
+            if (keyAuthApps.length > 1) {
+              const appOptions = keyAuthApps.map((a) => ({
+                label: a.name.slice(0, 100),
+                value: a.name,
+                description: `Stock disponible: ${a.count} licencias`.slice(0, 100),
+              }));
+              const appRow = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                  .setCustomId('select_keyauth_app')
+                  .setPlaceholder('Selecciona la cuenta o app de KeyAuth')
+                  .addOptions(appOptions)
+              );
+              return interaction.reply({
+                content: `🔑 **Selecciona la aplicación/cuenta de KeyAuth:**`,
+                components: [appRow],
+                ephemeral: true,
+              });
+            }
           }
 
           const defaultPrefix = db.forGuild(interaction.guildId).getDefaultPrefix();
@@ -1847,16 +1888,17 @@ client.on('interactionCreate', async (interaction) => {
 
       if (customId === 'select_create_provider') {
         const selectedProvider = values[0];
-        if (!perms.allowedProviders.includes(selectedProvider) && !perms.isAdmin) {
+        const baseType = providerManager.getBaseType(selectedProvider);
+        if (!perms.allowedProviders.includes(selectedProvider) && !perms.allowedProviders.includes(baseType) && !perms.isAdmin) {
           return interaction.reply({
             content: '⛔ No tienes acceso a esta plataforma.',
             ephemeral: true,
           });
         }
 
-        if (selectedProvider === 'mycheats') {
-          const provider = providerManager.getForGuild('mycheats', interaction.guildId, db);
-          const customName = db.getProviderMetadata(interaction.guildId, 'mycheats')?.name || 'WorldCheats (Panel VIP)';
+        if (selectedProvider === 'mycheats' || selectedProvider.startsWith('mycheats_')) {
+          const provider = providerManager.getForGuild(selectedProvider, interaction.guildId, db);
+          const customName = db.getProviderMetadata(interaction.guildId, selectedProvider)?.name || 'WorldCheats (Panel VIP)';
           const subs = await provider.getSubscriptions();
           const subOptions = subs.map((s) => ({
             label: s.name.slice(0, 100),
@@ -1865,7 +1907,7 @@ client.on('interactionCreate', async (interaction) => {
           }));
           const subRow = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
-              .setCustomId('select_mycheats_sub')
+              .setCustomId(`select_mycheats_sub_${selectedProvider}`)
               .setPlaceholder(`Selecciona la suscripción de ${customName}`.slice(0, 100))
               .addOptions(subOptions)
           );
@@ -1875,6 +1917,27 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
+        if (selectedProvider === 'keyauth' || selectedProvider.startsWith('keyauth_')) {
+          const keyAuthApps = db.getKeyAuthApps(interaction.guildId);
+          if (keyAuthApps.length > 1) {
+            const appOptions = keyAuthApps.map((a) => ({
+              label: a.name.slice(0, 100),
+              value: a.name,
+              description: `Stock disponible: ${a.count} licencias`.slice(0, 100),
+            }));
+            const appRow = new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId('select_keyauth_app')
+                .setPlaceholder('Selecciona la cuenta o app de KeyAuth')
+                .addOptions(appOptions)
+            );
+            return interaction.update({
+              content: `🔑 **Selecciona la aplicación/cuenta de KeyAuth de la cual deseas reclamar licencias:**`,
+              components: [appRow],
+            });
+          }
+        }
+
         const defaultPrefix = db.forGuild(interaction.guildId).getDefaultPrefix();
         const customName = db.getProviderMetadata(interaction.guildId, selectedProvider)?.name;
         return interaction.showModal(
@@ -1882,22 +1945,34 @@ client.on('interactionCreate', async (interaction) => {
         );
       }
 
-      if (customId === 'select_mycheats_sub') {
-        if (!perms.allowedProviders.includes('mycheats') && !perms.isAdmin) {
+      if (customId === 'select_keyauth_app') {
+        const chosenApp = values[0];
+        const defaultPrefix = db.forGuild(interaction.guildId).getDefaultPrefix();
+        const customName = db.getProviderMetadata(interaction.guildId, 'keyauth')?.name;
+        return interaction.showModal(
+          getCreateKeyModal('keyauth', perms.maxDays, defaultPrefix, '', '', customName, chosenApp)
+        );
+      }
+
+      if (customId === 'select_mycheats_sub' || customId.startsWith('select_mycheats_sub_')) {
+        const targetPid = customId.startsWith('select_mycheats_sub_')
+          ? customId.replace('select_mycheats_sub_', '')
+          : 'mycheats';
+        if (!perms.allowedProviders.includes(targetPid) && !perms.allowedProviders.includes('mycheats') && !perms.isAdmin) {
           return interaction.reply({
             content: '⛔ No tienes acceso a esta plataforma.',
             ephemeral: true,
           });
         }
         const chosenSubId = values[0];
-        const provider = providerManager.getForGuild('mycheats', interaction.guildId, db);
-        const customName = db.getProviderMetadata(interaction.guildId, 'mycheats')?.name || 'WorldCheats (Panel VIP)';
+        const provider = providerManager.getForGuild(targetPid, interaction.guildId, db);
+        const customName = db.getProviderMetadata(interaction.guildId, targetPid)?.name || 'WorldCheats (Panel VIP)';
         const subs = await provider.getSubscriptions();
         const foundSub = subs.find((s) => String(s.id) === String(chosenSubId));
         const subName = foundSub ? foundSub.name : '';
         const defaultPrefix = db.forGuild(interaction.guildId).getDefaultPrefix();
         return interaction.showModal(
-          getCreateKeyModal('mycheats', perms.maxDays, defaultPrefix, chosenSubId, subName, customName)
+          getCreateKeyModal(targetPid, perms.maxDays, defaultPrefix, chosenSubId, subName, customName)
         );
       }
 
@@ -2438,13 +2513,20 @@ client.on('interactionCreate', async (interaction) => {
         const rawTarget = customId.replace('modal_create_', '');
         let providerId = rawTarget;
         let chosenSubId = null;
-        if (rawTarget.startsWith('mycheats_')) {
-          chosenSubId = rawTarget.replace('mycheats_', '');
-          providerId = 'mycheats';
-        } else if (rawTarget.startsWith('realauthx_')) {
-          chosenSubId = rawTarget.replace('realauthx_', '');
-          providerId = 'realauthx';
+        let targetKeyAuthApp = null;
+
+        if (rawTarget.startsWith('keyauth_')) {
+          providerId = 'keyauth';
+          targetKeyAuthApp = decodeURIComponent(rawTarget.replace('keyauth_', ''));
+        } else {
+          const matchSub = rawTarget.match(/^(.+)_(\d+)$/);
+          if (matchSub) {
+            providerId = matchSub[1];
+            chosenSubId = matchSub[2];
+          }
         }
+
+        const baseType = providerManager.getBaseType(providerId);
         const provider = providerManager.getForGuild(providerId, gId, db);
 
         if (!perms.isAdmin && (!perms.isReseller || perms.isExpired)) {
@@ -2454,7 +2536,7 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
-        if (!perms.isAdmin && !perms.allowedProviders.includes(providerId)) {
+        if (!perms.isAdmin && !perms.allowedProviders.includes(providerId) && !perms.allowedProviders.includes(baseType)) {
           return interaction.reply({
             content: '⛔ No tienes permiso para generar en esta plataforma.',
             ephemeral: true,
@@ -2485,7 +2567,7 @@ client.on('interactionCreate', async (interaction) => {
           note = '';
         }
 
-        if (providerId !== 'keyauth') {
+        if (baseType !== 'keyauth') {
           try {
             prefix = (interaction.fields.getTextInputValue('input_prefix') || '').trim();
           } catch {
@@ -2556,18 +2638,19 @@ client.on('interactionCreate', async (interaction) => {
 
         await interaction.deferReply({ ephemeral: true });
 
-        const isBypass = providerId === 'bypass' || providerId === 'bypass_uid';
+        const isBypass = baseType === 'bypass' || baseType === 'bypass_uid';
         const serverPrefix = isBypass ? '' : db.forGuild(gId).getDefaultPrefix();
-        const finalPrefix = (prefix && prefix.trim()) ? prefix.trim() : (providerId === 'mycheats' ? (serverPrefix || 'USER') : serverPrefix);
+        const finalPrefix = (prefix && prefix.trim()) ? prefix.trim() : (baseType === 'mycheats' ? (serverPrefix || 'USER') : serverPrefix);
 
         try {
-          console.log(`[Discord Keys] Emisión en guild ${gId} (${providerId}${chosenSubId ? ' sub:' + chosenSubId : ''}) por @${user.tag} - Cuenta: "${provider.config?.username || provider.config?.sellerKey || 'Default'}"`);
+          console.log(`[Discord Keys] Emisión en guild ${gId} (${providerId}${chosenSubId ? ' sub:' + chosenSubId : ''}${targetKeyAuthApp ? ' app:' + targetKeyAuthApp : ''}) por @${user.tag} - Cuenta: "${provider.config?.username || provider.config?.sellerKey || 'Default'}"`);
           const items = await provider.createKey({
             days,
             count,
             prefix: finalPrefix,
             note,
             subId: chosenSubId,
+            app: targetKeyAuthApp,
           });
 
           // Registrar en Anti-Flood y Cuota Diaria
@@ -2603,7 +2686,7 @@ client.on('interactionCreate', async (interaction) => {
                 providerName: pDisplayName,
                 keyOrUser: val,
                 days: itemDays,
-                isAccount: providerId === 'mycheats',
+                isAccount: baseType === 'mycheats',
                 subName: itemSubName,
                 guildId: gId,
               });
@@ -2615,7 +2698,7 @@ client.on('interactionCreate', async (interaction) => {
 
           const successEmbed = new EmbedBuilder()
             .setColor(0x00d2d3)
-            .setTitle(`✅ ${providerId === 'mycheats' ? 'Cuenta Creada' : 'Licencia Creada'} (${displayHeader})`)
+            .setTitle(`✅ ${baseType === 'mycheats' ? 'Cuenta Creada' : 'Licencia Creada'} (${displayHeader})`)
             .setDescription(
               `Copia el siguiente recuadro para enviarlo directamente a tu cliente por WhatsApp:\n\n` +
                 forwardTemplates +
@@ -2628,7 +2711,7 @@ client.on('interactionCreate', async (interaction) => {
 
           // Log de auditoría
           const opAudit = getUserAuditInfo(member, user, config, gId);
-          const isVipAccount = providerId === 'mycheats';
+          const isVipAccount = baseType === 'mycheats';
           const title = `[AUDITORÍA] ${isVipAccount ? 'Creación de Cuenta' : 'Emisión de Licencia'} (${pDisplayName})`;
 
           const logFields = [

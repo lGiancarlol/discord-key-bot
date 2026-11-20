@@ -348,20 +348,22 @@ function createWebServer(client) {
   app.get('/api/guilds/:guildId/stock', requireAuth, requireGuildAccess(client, db), (req, res) => {
     const stock = req.guildDb.getAllStock();
     const keyauthBreakdown = req.guildDb.getStockBreakdown('keyauth');
+    const keyauthApps = db.getKeyAuthApps(req.params.guildId);
     res.json({
       ...stock,
       keyauthBreakdown,
+      keyauthApps,
     });
   });
 
   // 6. Cargar Lote de Claves al Stock
   app.post('/api/guilds/:guildId/stock', requireAuth, requireGuildAccess(client, db), async (req, res) => {
-    const { providerId, days, rawKeys } = req.body;
+    const { providerId, days, rawKeys, app = 'Principal' } = req.body;
     if (!providerId || !rawKeys) {
       return res.status(400).json({ error: 'Faltan parámetros requeridos.' });
     }
 
-    if (providerId !== 'keyauth') {
+    if (providerId !== 'keyauth' && !providerId.startsWith('keyauth_')) {
       return res.status(400).json({ error: 'Solo KeyAuth (Elite Pro) requiere carga manual de stock. Las demás plataformas generan claves automáticamente vía API en tiempo real.' });
     }
 
@@ -375,7 +377,8 @@ function createWebServer(client) {
     }
 
     const numDays = parseInt(days || '30', 10);
-    const result = req.guildDb.addStock(providerId, keysList, numDays);
+    const appName = (app && String(app).trim()) || 'Principal';
+    const result = req.guildDb.addStock(providerId, keysList, numDays, req.params.guildId, appName);
 
     const opTag = req.user.username || 'Web Admin';
     await logToGuildAdminChannel(
@@ -387,6 +390,7 @@ function createWebServer(client) {
         .addFields(
           { name: 'Operador', value: `${opTag} (Panel Web)`, inline: true },
           { name: 'Plataforma', value: providerId, inline: true },
+          { name: 'Cuenta / App', value: appName, inline: true },
           { name: 'Claves Añadidas', value: `+${result.added} claves`, inline: true },
           { name: 'Stock Total', value: `${result.total} claves`, inline: true }
         )
@@ -394,7 +398,7 @@ function createWebServer(client) {
         .setTimestamp()
     );
 
-    res.json({ success: true, added: result.added, total: result.total });
+    res.json({ success: true, added: result.added, total: result.total, app: appName });
   });
 
   // 7. Historial de Claves
@@ -433,7 +437,7 @@ function createWebServer(client) {
 
   // 8. Emisión Rápida de Licencias desde Web
   app.post('/api/guilds/:guildId/keys/create', requireAuth, requireGuildAccess(client, db), async (req, res) => {
-    const { providerId, days = 30, count = 1, prefix = '', note = '', subId = null } = req.body;
+    const { providerId, days = 30, count = 1, prefix = '', note = '', subId = null, app = null } = req.body;
     const { guildId } = req.params;
 
     const defaultPrefix = req.guildDb.getDefaultPrefix();
@@ -446,6 +450,8 @@ function createWebServer(client) {
 
     const pMeta = req.guildDb.getProviderMetadata ? req.guildDb.getProviderMetadata(providerId) : null;
     const pDisplayName = pMeta?.name || provider.name;
+    const baseType = providerManager.getBaseType(providerId);
+    const isAccount = baseType === 'mycheats';
 
     // 1. Verificación de Anti-Flood (Burst Rate Limiter)
     const floodCheck = req.guildDb.checkAntiFlood(req.user.id);
@@ -483,13 +489,14 @@ function createWebServer(client) {
     }
 
     try {
-      console.log(`[Web Keys] Emisión en guild ${guildId} (${providerId}${subId ? ' sub:' + subId : ''}) por @${req.user.username} - Cuenta: "${provider.config?.username || provider.config?.sellerKey || 'Default'}"`);
+      console.log(`[Web Keys] Emisión en guild ${guildId} (${providerId}${subId ? ' sub:' + subId : ''}${app ? ' app:' + app : ''}) por @${req.user.username} - Cuenta: "${provider.config?.username || provider.config?.sellerKey || 'Default'}"`);
       const items = await provider.createKey({
         days: Number(days),
         count: Number(count),
         prefix: targetPrefix,
         note,
         subId: subId || null,
+        app: app || null,
       });
 
       // Registrar uso en Anti-Flood y Cuota Diaria
@@ -522,14 +529,13 @@ function createWebServer(client) {
             providerName: pDisplayName,
             keyOrUser: val,
             days: itemDays,
-            isAccount: providerId === 'mycheats',
+            isAccount,
             subName: itemSubName,
           });
         })
         .join('\n');
 
       // Auditoría en Discord
-      const isAccount = providerId === 'mycheats';
       const firstSubName = items[0] && typeof items[0] === 'object' && items[0].subName ? items[0].subName : '';
       const auditFields = [
         { name: 'Operador', value: `${req.user.username} (Panel Web)`, inline: true },

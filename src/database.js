@@ -348,7 +348,17 @@ class Database {
   getProviderMetadata(guildId, providerId) {
     const gData = this.getGuildData(guildId);
     const custom = gData.providersMetadata?.[providerId] || {};
-    const fallback = DEFAULT_PROVIDER_METADATA[providerId] || { name: providerId, desc: '', icon: '🔑' };
+    let fallback = DEFAULT_PROVIDER_METADATA[providerId];
+    if (!fallback) {
+      const baseType = providerId.includes('_') ? providerId.split('_')[0] : providerId;
+      const baseDef = DEFAULT_PROVIDER_METADATA[baseType] || { name: providerId, desc: '', icon: '🔑' };
+      const suffix = providerId.replace(`${baseType}_`, '');
+      fallback = {
+        name: `${baseDef.name} (Cuenta ${suffix})`,
+        desc: baseDef.desc,
+        icon: baseDef.icon,
+      };
+    }
     return {
       name: (custom.name && custom.name.trim()) ? custom.name.trim() : fallback.name,
       desc: (custom.desc && custom.desc.trim()) ? custom.desc.trim() : fallback.desc,
@@ -359,13 +369,9 @@ class Database {
   getAllProvidersMetadata(guildId) {
     const gData = this.getGuildData(guildId);
     const res = {};
-    for (const [id, def] of Object.entries(DEFAULT_PROVIDER_METADATA)) {
-      const custom = gData.providersMetadata?.[id] || {};
-      res[id] = {
-        name: (custom.name && custom.name.trim()) ? custom.name.trim() : def.name,
-        desc: (custom.desc && custom.desc.trim()) ? custom.desc.trim() : def.desc,
-        icon: custom.icon || def.icon,
-      };
+    const knownKeys = new Set([...Object.keys(DEFAULT_PROVIDER_METADATA), ...Object.keys(gData.providersMetadata || {}), ...Object.keys(gData.providersConfig || {})]);
+    for (const id of knownKeys) {
+      res[id] = this.getProviderMetadata(guildId, id);
     }
     return res;
   }
@@ -373,7 +379,7 @@ class Database {
   setProviderMetadata(guildId, providerId, { name, desc }) {
     const gData = this.getGuildData(guildId);
     if (!gData.providersMetadata) gData.providersMetadata = {};
-    const current = gData.providersMetadata[providerId] || DEFAULT_PROVIDER_METADATA[providerId] || {};
+    const current = gData.providersMetadata[providerId] || this.getProviderMetadata(guildId, providerId);
     gData.providersMetadata[providerId] = {
       ...current,
       name: name !== undefined ? name.trim() : current.name,
@@ -385,10 +391,21 @@ class Database {
 
   getEnabledProviders(guildId) {
     const gData = this.getGuildData(guildId);
-    if (Array.isArray(gData.enabledProviders) && gData.enabledProviders.length > 0) {
-      return gData.enabledProviders;
+    let baseList = Array.isArray(gData.enabledProviders) && gData.enabledProviders.length > 0
+      ? gData.enabledProviders
+      : ['bypass', 'bypass_uid', 'mycheats', 'keyauth', 'realauthx'];
+
+    // Detectar cuentas adicionales configuradas (ej: mycheats_2, realauthx_2, etc.)
+    const extraAccounts = [];
+    if (gData.providersConfig && typeof gData.providersConfig === 'object') {
+      for (const [pId, pCfg] of Object.entries(gData.providersConfig)) {
+        if (!pCfg || pCfg.enabled === false) continue;
+        if (!baseList.includes(pId) && (pCfg.username || pCfg.sellerKey || pCfg.appId)) {
+          extraAccounts.push(pId);
+        }
+      }
     }
-    return ['bypass', 'bypass_uid', 'mycheats', 'keyauth', 'realauthx'];
+    return [...baseList, ...extraAccounts];
   }
 
   setEnabledProviders(guildId, providersArray) {
@@ -1039,7 +1056,7 @@ class Database {
 
   // ── GESTIÓN DE STOCK DE CLAVES (POR GUILD) ──
 
-  addStock(providerId, keysArray, days = 30, guildId) {
+  addStock(providerId, keysArray, days = 30, guildId, app = 'Principal') {
     const gData = this.getGuildData(guildId);
     if (!gData.keyStock[providerId]) {
       gData.keyStock[providerId] = [];
@@ -1048,6 +1065,7 @@ class Database {
       .map((k) => k.trim())
       .filter((k) => k.length > 0);
 
+    const appName = (app && String(app).trim()) || 'Principal';
     let addedCount = 0;
     for (const k of cleanKeys) {
       const exists = gData.keyStock[providerId].some((item) => {
@@ -1058,6 +1076,7 @@ class Database {
         gData.keyStock[providerId].push({
           key: k,
           days: Number(days) || 30,
+          app: appName,
         });
         addedCount++;
       }
@@ -1066,10 +1085,11 @@ class Database {
     return {
       added: addedCount,
       total: gData.keyStock[providerId].length,
+      app: appName,
     };
   }
 
-  popStock(providerId, targetDays = null, guildId = null) {
+  popStock(providerId, targetDays = null, guildId = null, targetApp = null) {
     let actualDays = targetDays;
     let actualGuildId = guildId;
 
@@ -1084,42 +1104,78 @@ class Database {
     }
 
     let index = -1;
-    if (actualDays !== null && actualDays !== undefined) {
-      const numDays = Number(actualDays);
-      if (!isNaN(numDays) && numDays > 0) {
-        index = gData.keyStock[providerId].findIndex((item) => {
-          const itemDays = typeof item === 'object' && item && item.days ? Number(item.days) : 30;
-          return itemDays === numDays;
-        });
+    const numDays = actualDays !== null && actualDays !== undefined ? Number(actualDays) : null;
+    const cleanApp = targetApp && String(targetApp).trim() ? String(targetApp).trim().toLowerCase() : null;
 
-        // Si se especificó una duración y no hay stock con esa duración, retornar null
-        if (index === -1) {
-          return null;
-        }
+    index = gData.keyStock[providerId].findIndex((item) => {
+      const itemDays = typeof item === 'object' && item && item.days ? Number(item.days) : 30;
+      const itemApp = typeof item === 'object' && item && item.app ? String(item.app).trim().toLowerCase() : 'principal';
+
+      if (numDays !== null && !isNaN(numDays) && numDays > 0 && itemDays !== numDays) {
+        return false;
       }
-    }
+      if (cleanApp !== null && itemApp !== cleanApp) {
+        return false;
+      }
+      return true;
+    });
 
     if (index === -1) {
-      index = 0;
+      return null;
     }
 
     const [item] = gData.keyStock[providerId].splice(index, 1);
     this.saveGuild(actualGuildId);
 
     if (typeof item === 'object' && item !== null && item.key) {
-      return { key: item.key, days: Number(item.days) || 30 };
+      return {
+        key: item.key,
+        days: Number(item.days) || 30,
+        app: item.app || 'Principal',
+      };
     }
-    return { key: item, days: actualDays ? Number(actualDays) : 30 };
+    return { key: item, days: actualDays ? Number(actualDays) : 30, app: 'Principal' };
   }
 
-  getStockBreakdown(providerId, guildId = null) {
+  getKeyAuthApps(guildId = null) {
+    const gData = this.getGuildData(guildId);
+    const list = gData.keyStock['keyauth'] || [];
+    const appMap = {};
+    for (const item of list) {
+      const app = (typeof item === 'object' && item && item.app) ? String(item.app).trim() : 'Principal';
+      appMap[app] = (appMap[app] || 0) + 1;
+    }
+    return Object.entries(appMap).map(([name, count]) => ({ name, count }));
+  }
+
+  getStockBreakdown(providerId, guildId = null, targetApp = null) {
     const gData = this.getGuildData(guildId);
     const list = gData.keyStock[providerId] || [];
     const breakdown = {};
+    const appsBreakdown = {};
+    const cleanTargetApp = targetApp ? String(targetApp).trim().toLowerCase() : null;
+
     for (const item of list) {
       const days = typeof item === 'object' && item && item.days ? Number(item.days) : 30;
-      breakdown[days] = (breakdown[days] || 0) + 1;
+      const appName = typeof item === 'object' && item && item.app ? String(item.app).trim() : 'Principal';
+
+      if (!appsBreakdown[appName]) {
+        appsBreakdown[appName] = { total: 0 };
+      }
+      appsBreakdown[appName][days] = (appsBreakdown[appName][days] || 0) + 1;
+      appsBreakdown[appName].total++;
+
+      if (!cleanTargetApp || appName.toLowerCase() === cleanTargetApp) {
+        breakdown[days] = (breakdown[days] || 0) + 1;
+      }
     }
+
+    // Adjuntar desglose detallado de apps como propiedad no enumerable o accesible
+    Object.defineProperty(breakdown, '_apps', {
+      value: appsBreakdown,
+      enumerable: false,
+      writable: true,
+    });
     return breakdown;
   }
 

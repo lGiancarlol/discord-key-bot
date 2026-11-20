@@ -8,6 +8,11 @@ class RealAuthXProvider extends BaseProvider {
     super(config);
     this.id = config.id || 'realauthx';
     this.name = config.name || 'RealAuthX (Roblox)';
+    this.resetSession();
+    this.detectedAppId = null;
+  }
+
+  resetSession() {
     this.jar = new CookieJar();
     this.client = wrapper(
       axios.create({
@@ -23,65 +28,92 @@ class RealAuthXProvider extends BaseProvider {
       })
     );
     this.authenticated = false;
-    this.detectedAppId = null;
   }
 
-  async login() {
-    try {
-      const username = this.config.username || 'GianAdmin1';
-      const password = this.config.password || 'GianAdmin2';
-      console.log(`[RealAuthX] Iniciando sesión para usuario "${username}"...`);
-
-      // 1. Obtener cookies iniciales
-      await this.client.get('/');
-
-      // 2. Enviar formulario de inicio de sesión
-      const params = new URLSearchParams();
-      params.append('username', username);
-      params.append('password', password);
-      params.append('otp', '');
-      params.append('remember_user', '1');
-
-      const loginRes = await this.client.post('/login', params.toString(), {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Referer: `${this.config.baseUrl || 'https://www.realauthx.com'}/`,
-          Origin: this.config.baseUrl || 'https://www.realauthx.com',
-        },
-      });
-
-      if (typeof loginRes.data === 'object' && loginRes.data.status === 'error') {
-        throw new Error(loginRes.data.message || 'Credenciales inválidas en RealAuthX');
-      }
-
-      this.authenticated = true;
-
-      // 3. Autodetectar App ID si no está fijado en la configuración
+  async login(retries = 2) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        const dashRes = await this.client.get('/dashboard');
-        const dashHtml = dashRes.data || '';
-        const appMatches = [...dashHtml.matchAll(/app_id=(\d+)/g)].map((m) => m[1]);
-        if (appMatches.length > 0) {
-          const uniqueApps = [...new Set(appMatches)];
-          this.detectedAppId = uniqueApps[0];
-          console.log(`[RealAuthX] Cuenta "${username}" autenticada exitosamente. App detectada: ${this.detectedAppId}`);
-        } else {
+        const username = this.config.username || 'GianAdmin1';
+        const password = this.config.password || 'GianAdmin2';
+        console.log(`[RealAuthX] Iniciando sesión para usuario "${username}" (intento ${attempt}/${retries})...`);
+
+        // 1. Obtener cookies iniciales
+        await this.client.get('/');
+
+        // 2. Enviar formulario de inicio de sesión
+        const params = new URLSearchParams();
+        params.append('username', username);
+        params.append('password', password);
+        params.append('otp', '');
+        params.append('remember_user', '1');
+
+        const loginRes = await this.client.post('/login', params.toString(), {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Referer: `${this.config.baseUrl || 'https://www.realauthx.com'}/`,
+            Origin: this.config.baseUrl || 'https://www.realauthx.com',
+          },
+        });
+
+        if (typeof loginRes.data === 'object' && loginRes.data.status === 'error') {
+          throw new Error(loginRes.data.message || 'Credenciales inválidas en RealAuthX');
+        }
+
+        this.authenticated = true;
+
+        // 3. Autodetectar App ID si no está fijado en la configuración
+        try {
+          const dashRes = await this.client.get('/dashboard');
+          const dashHtml = dashRes.data || '';
+          const appMatches = [...dashHtml.matchAll(/app_id=(\d+)/g)].map((m) => m[1]);
+          if (appMatches.length > 0) {
+            const uniqueApps = [...new Set(appMatches)];
+            this.detectedAppId = uniqueApps[0];
+            console.log(`[RealAuthX] Cuenta "${username}" autenticada exitosamente. App detectada: ${this.detectedAppId}`);
+          } else {
+            console.log(`[RealAuthX] Cuenta "${username}" autenticada exitosamente.`);
+          }
+        } catch (_) {
           console.log(`[RealAuthX] Cuenta "${username}" autenticada exitosamente.`);
         }
-      } catch (_) {
-        console.log(`[RealAuthX] Cuenta "${username}" autenticada exitosamente.`);
-      }
 
-      return true;
-    } catch (err) {
-      this.authenticated = false;
-      throw new Error(`[RealAuthX] Error de autenticación: ${err.message}`);
+        return true;
+      } catch (err) {
+        this.authenticated = false;
+        if (attempt < retries) {
+          console.warn(`[RealAuthX] Error en intento de login ${attempt}, limpiando sesión y reintentando...`);
+          this.resetSession();
+          await new Promise((r) => setTimeout(r, 1000));
+        } else {
+          throw new Error(`[RealAuthX] Error de autenticación tras ${retries} intentos: ${err.message}`);
+        }
+      }
     }
   }
 
-  async ensureAuth() {
-    if (!this.authenticated) {
+  async ensureAuth(force = false) {
+    if (!this.authenticated || force) {
       await this.login();
+    }
+  }
+
+  /**
+   * Ejecutar acción con auto-recuperación si la sesión caducó
+   */
+  async executeWithAutoAuth(fn) {
+    await this.ensureAuth();
+    try {
+      return await fn();
+    } catch (err) {
+      const msg = String(err.message || '');
+      const isSessionError = msg.includes('caducó') || msg.includes('/login') || msg.includes('401') || msg.includes('redirigida');
+      if (isSessionError) {
+        console.warn(`[RealAuthX] ⚠️ Sesión expirada detectada. Auto-recuperando sesión inmediatamente...`);
+        this.resetSession();
+        await this.login();
+        return await fn();
+      }
+      throw err;
     }
   }
 
@@ -90,7 +122,12 @@ class RealAuthXProvider extends BaseProvider {
     try {
       await this.ensureAuth();
       const appId = (this.config.appId && String(this.config.appId).trim()) || this.detectedAppId || '521';
-      await this.client.get(`/dashboard?app_id=${appId}&section=licenses`);
+      const res = await this.client.get(`/dashboard?app_id=${appId}&section=licenses`);
+      if (res.request?.path?.includes('/login')) {
+        console.warn(`[RealAuthX] checkHealth detectó sesión expirada. Renovando...`);
+        this.resetSession();
+        await this.login();
+      }
       const latency = Date.now() - start;
       return { online: true, latency, message: 'Sesión activa y panel operativo' };
     } catch (err) {
@@ -126,99 +163,104 @@ class RealAuthXProvider extends BaseProvider {
    * Generar Licencias en RealAuthX
    */
   async createKey({ days = 30, count = 1, prefix = '', note = '', subId = null }) {
-    await this.ensureAuth();
-    const appId = (this.config.appId && String(this.config.appId).trim()) || this.detectedAppId || '521';
-    const effectiveSubId = subId || (this.config.defaultSubId && String(this.config.defaultSubId).trim()) || '715';
+    return this.executeWithAutoAuth(async () => {
+      const appId = (this.config.appId && String(this.config.appId).trim()) || this.detectedAppId || '521';
+      const effectiveSubId = subId || (this.config.defaultSubId && String(this.config.defaultSubId).trim()) || '715';
 
-    // Obtener claves existentes antes de la creación para detectar exactamente las nuevas
-    const beforeRes = await this.client.get(`/dashboard?app_id=${appId}&section=licenses`);
-    const beforeHtml = beforeRes.data || '';
-    const beforeKeys = new Set([...beforeHtml.matchAll(/data-license-key=['"]([^'"]+)['"]/g)].map((m) => m[1]));
-
-    // Construir la máscara de licencia
-    let mask = '******-******-******-******';
-    if (prefix && String(prefix).trim()) {
-      const cleanPrefix = String(prefix).trim().toUpperCase();
-      if (cleanPrefix.includes('-')) {
-        mask = `${cleanPrefix}-******`;
-      } else {
-        mask = `${cleanPrefix}-******-******`;
+      // Obtener claves existentes antes de la creación para detectar exactamente las nuevas
+      const beforeRes = await this.client.get(`/dashboard?app_id=${appId}&section=licenses`);
+      if (beforeRes.request?.path?.includes('/login')) {
+        throw new Error('La sesión de RealAuthX caducó al consultar licencias.');
       }
-    }
+      const beforeHtml = beforeRes.data || '';
+      const beforeKeys = new Set([...beforeHtml.matchAll(/data-license-key=['"]([^'"]+)['"]/g)].map((m) => m[1]));
 
-    const params = new URLSearchParams();
-    params.append('app_id', String(appId));
-    params.append('quantity', String(count));
-    params.append('license_mask', mask);
-    params.append('max_uses', '1');
-    params.append('subscription_id', String(effectiveSubId));
-    params.append('license_case', 'upper');
-    params.append('expiry_unit', 'days');
-    params.append('expiry_duration', String(days));
-    params.append('note', note ? String(note).slice(0, 500) : '');
-
-    const createRes = await this.client.post('/dashboard/license/create', params.toString(), {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Referer: `${this.config.baseUrl || 'https://www.realauthx.com'}/dashboard?app_id=${appId}&section=licenses`,
-        Origin: this.config.baseUrl || 'https://www.realauthx.com',
-      },
-    });
-
-    if (createRes.request?.path?.includes('/login')) {
-      this.authenticated = false;
-      throw new Error('La sesión de RealAuthX caducó al intentar crear la licencia.');
-    }
-
-    // Obtener la página actualizada y detectar las claves creadas
-    const afterRes = await this.client.get(`/dashboard?app_id=${appId}&section=licenses`);
-    const afterHtml = afterRes.data || '';
-
-    // Mapear cada fila con su data-license-key y license_id
-    const rowRe = /<tr[^>]*data-license-key=['"]([^'"]+)['"][\s\S]*?<input type=['"]hidden['"] name=['"]license_id['"] value=['"](\d+)['"]/gi;
-    let match;
-    const createdKeys = [];
-
-    while ((match = rowRe.exec(afterHtml)) !== null) {
-      const keyVal = match[1];
-      const licId = match[2];
-      if (!beforeKeys.has(keyVal)) {
-        createdKeys.push({
-          key: keyVal,
-          licenseId: licId,
-          days,
-          subId: effectiveSubId,
-          subName: 'default (L1)',
-        });
-        if (createdKeys.length >= count) break;
+      // Construir la máscara de licencia
+      let mask = '******-******-******-******';
+      if (prefix && String(prefix).trim()) {
+        const cleanPrefix = String(prefix).trim().toUpperCase();
+        if (cleanPrefix.includes('-')) {
+          mask = `${cleanPrefix}-******`;
+        } else {
+          mask = `${cleanPrefix}-******-******`;
+        }
       }
-    }
 
-    // Si por alguna razón la detección de filas no arrojó la cantidad esperada, buscar en el flash message o claves nuevas
-    if (createdKeys.length === 0) {
-      const allAfterKeys = [...afterHtml.matchAll(/data-license-key=['"]([^'"]+)['"]/g)].map((m) => m[1]);
-      for (const k of allAfterKeys) {
-        if (!beforeKeys.has(k)) {
-          createdKeys.push({ key: k, days, subId: effectiveSubId });
+      const params = new URLSearchParams();
+      params.append('app_id', String(appId));
+      params.append('quantity', String(count));
+      params.append('license_mask', mask);
+      params.append('max_uses', '1');
+      params.append('subscription_id', String(effectiveSubId));
+      params.append('license_case', 'upper');
+      params.append('expiry_unit', 'days');
+      params.append('expiry_duration', String(days));
+      params.append('note', note ? String(note).slice(0, 500) : '');
+
+      const createRes = await this.client.post('/dashboard/license/create', params.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Referer: `${this.config.baseUrl || 'https://www.realauthx.com'}/dashboard?app_id=${appId}&section=licenses`,
+          Origin: this.config.baseUrl || 'https://www.realauthx.com',
+        },
+      });
+
+      if (createRes.request?.path?.includes('/login')) {
+        throw new Error('La sesión de RealAuthX caducó al intentar crear la licencia.');
+      }
+
+      // Obtener la página actualizada y detectar las claves creadas
+      const afterRes = await this.client.get(`/dashboard?app_id=${appId}&section=licenses`);
+      const afterHtml = afterRes.data || '';
+
+      // Mapear cada fila con su data-license-key y license_id
+      const rowRe = /<tr[^>]*data-license-key=['"]([^'"]+)['"][\s\S]*?<input type=['"]hidden['"] name=['"]license_id['"] value=['"](\d+)['"]/gi;
+      let match;
+      const createdKeys = [];
+
+      while ((match = rowRe.exec(afterHtml)) !== null) {
+        const keyVal = match[1];
+        const licId = match[2];
+        if (!beforeKeys.has(keyVal)) {
+          createdKeys.push({
+            key: keyVal,
+            licenseId: licId,
+            days,
+            subId: effectiveSubId,
+            subName: 'default (L1)',
+          });
           if (createdKeys.length >= count) break;
         }
       }
-    }
 
-    if (createdKeys.length === 0) {
-      throw new Error('No se pudo verificar la creación de la clave en RealAuthX.');
-    }
+      // Si por alguna razón la detección de filas no arrojó la cantidad esperada, buscar en el flash message o claves nuevas
+      if (createdKeys.length === 0) {
+        const allAfterKeys = [...afterHtml.matchAll(/data-license-key=['"]([^'"]+)['"]/g)].map((m) => m[1]);
+        for (const k of allAfterKeys) {
+          if (!beforeKeys.has(k)) {
+            createdKeys.push({ key: k, days, subId: effectiveSubId });
+            if (createdKeys.length >= count) break;
+          }
+        }
+      }
 
-    return createdKeys;
+      if (createdKeys.length === 0) {
+        throw new Error('No se pudo verificar la creación de la clave en RealAuthX.');
+      }
+
+      return createdKeys;
+    });
   }
 
   /**
    * Buscar el ID numérico interno (license_id) asociado a una clave
    */
   async findLicenseId(key) {
-    await this.ensureAuth();
     const appId = (this.config.appId && String(this.config.appId).trim()) || this.detectedAppId || '521';
     const res = await this.client.get(`/dashboard?app_id=${appId}&section=licenses`);
+    if (res.request?.path?.includes('/login')) {
+      throw new Error('La sesión de RealAuthX caducó al buscar clave.');
+    }
     const html = res.data || '';
 
     const cleanKey = String(key).trim();
@@ -236,62 +278,62 @@ class RealAuthXProvider extends BaseProvider {
    * Resetear HWID en RealAuthX
    */
   async resetHwid(key) {
-    await this.ensureAuth();
-    const appId = (this.config.appId && String(this.config.appId).trim()) || this.detectedAppId || '521';
-    const licenseId = await this.findLicenseId(key);
+    return this.executeWithAutoAuth(async () => {
+      const appId = (this.config.appId && String(this.config.appId).trim()) || this.detectedAppId || '521';
+      const licenseId = await this.findLicenseId(key);
 
-    if (!licenseId) {
-      throw new Error(`No se encontró la clave "${key}" en el panel de RealAuthX.`);
-    }
+      if (!licenseId) {
+        throw new Error(`No se encontró la clave "${key}" en el panel de RealAuthX.`);
+      }
 
-    const params = new URLSearchParams();
-    params.append('app_id', String(appId));
-    params.append('license_id', String(licenseId));
+      const params = new URLSearchParams();
+      params.append('app_id', String(appId));
+      params.append('license_id', String(licenseId));
 
-    const res = await this.client.post('/dashboard/license/reset', params.toString(), {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Referer: `${this.config.baseUrl || 'https://www.realauthx.com'}/dashboard?app_id=${appId}&section=licenses`,
-      },
+      const res = await this.client.post('/dashboard/license/reset', params.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Referer: `${this.config.baseUrl || 'https://www.realauthx.com'}/dashboard?app_id=${appId}&section=licenses`,
+        },
+      });
+
+      if (res.request?.path?.includes('/login')) {
+        throw new Error('La sesión de RealAuthX caducó al intentar resetear HWID.');
+      }
+
+      return { success: true, message: `HWID de la licencia ${key} reseteado exitosamente.` };
     });
-
-    if (res.request?.path?.includes('/login')) {
-      this.authenticated = false;
-      throw new Error('La sesión de RealAuthX caducó al intentar resetear HWID.');
-    }
-
-    return { success: true, message: `HWID de la licencia ${key} reseteado exitosamente.` };
   }
 
   /**
    * Eliminar Licencia en RealAuthX
    */
   async deleteKey(key) {
-    await this.ensureAuth();
-    const appId = (this.config.appId && String(this.config.appId).trim()) || this.detectedAppId || '521';
-    const licenseId = await this.findLicenseId(key);
+    return this.executeWithAutoAuth(async () => {
+      const appId = (this.config.appId && String(this.config.appId).trim()) || this.detectedAppId || '521';
+      const licenseId = await this.findLicenseId(key);
 
-    if (!licenseId) {
-      throw new Error(`No se encontró la clave "${key}" en RealAuthX para eliminar.`);
-    }
+      if (!licenseId) {
+        throw new Error(`No se encontró la clave "${key}" en RealAuthX para eliminar.`);
+      }
 
-    const params = new URLSearchParams();
-    params.append('app_id', String(appId));
-    params.append('license_id', String(licenseId));
+      const params = new URLSearchParams();
+      params.append('app_id', String(appId));
+      params.append('license_id', String(licenseId));
 
-    const res = await this.client.post('/dashboard/license/delete', params.toString(), {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Referer: `${this.config.baseUrl || 'https://www.realauthx.com'}/dashboard?app_id=${appId}&section=licenses`,
-      },
+      const res = await this.client.post('/dashboard/license/delete', params.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Referer: `${this.config.baseUrl || 'https://www.realauthx.com'}/dashboard?app_id=${appId}&section=licenses`,
+        },
+      });
+
+      if (res.request?.path?.includes('/login')) {
+        throw new Error('La sesión de RealAuthX caducó al intentar eliminar la licencia.');
+      }
+
+      return { success: true, message: `Licencia ${key} eliminada correctamente de RealAuthX.` };
     });
-
-    if (res.request?.path?.includes('/login')) {
-      this.authenticated = false;
-      throw new Error('La sesión de RealAuthX caducó al intentar eliminar la licencia.');
-    }
-
-    return { success: true, message: `Licencia ${key} eliminada correctamente de RealAuthX.` };
   }
 
   /**
